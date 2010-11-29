@@ -141,9 +141,9 @@ loop() ->
         {'$een_cast', Cast, Params} ->
             cbk_handle({cast, Cast, Params}, none);
         {'$een_reply', Monitor, Reply} ->
-            Mod:handle({reply, Monitor, Reply});
+            cbk_handle({reply, Monitor, Reply}, none);
         {'DOWN', Monitor, process, Pid, Reason} ->
-            Mod:handle({reply_down, Monitor, Reason});
+            cbk_handle({reply_down, Monitor, Reason}, none);
         {'$een_bind', BindOut, From} ->
             put('$een_comp_state', State#state{bind_out = BindOut}),
             From ! {'$een_bind_reply', ok};
