@@ -31,8 +31,7 @@ compile_tests: $(TEST_TARGETS)
 
 run: $(ALL_TARGETS)
 	$(MAKE) start_aux_nodes
-	mkdir -p $(LOG_DIR)
-	TH="$(TH)" erl $(ERL_OPTS)
+	erl $(ERL_OPTS)
 	$(MAKE) start_aux_nodes
 
 all_tests: $(ALL_TARGETS) $(TEST_TARGETS)

@@ -3,7 +3,7 @@
 
 -include("erleen.hrl").
 
--export([out_call/2, out_call_async/2, out_cast/2, reply/2]).
+-export([call/2, call_async/2, cast/2, reply/2]).
 -export([start/3, start/2, bind/2, get_params/1, init/3]).
 -export([behaviour_info/1]).
 
@@ -15,15 +15,15 @@
 %% Message I/O API
 %% ----------------------------------------------------------------------------
 
-out_call(Call, Params) ->
+call(Call, Params) ->
     {ok, ReplyId} = msg_out({call, Call, Params}),
     block_on_reply(ReplyId).
 
-out_call_async(Call, Params) ->
+call_async(Call, Params) ->
     msg_out({call, Call, Params}),
     ok.
 
-out_cast(Cast, Params) ->
+cast(Cast, Params) ->
     msg_out({cast, Cast, Params}),
     ok.
 
@@ -62,25 +62,21 @@ block_on_reply(ReplyId) ->
         noreply                       -> block_on_reply(ReplyId)
     end.
 
-%% (MsgOut) -> {ok, ReplyId} | ok
 msg_out(MsgOut) ->
     #een_binding{msg_out = Out} = get_binding(),
     Out(MsgOut).
 
-%% (Reply) -> {reply, ReplyId, ReplySeries} | noreply
 collect_reply(Reply) ->
     #een_binding{collect_reply = Collect} = get_binding(),
     Collect(Reply).
 
-%% (MsgIn) -> {in, MsgInSeries, ReplyTo} | noin
 collect_in(MsgIn) ->
     #een_binding{collect_in = Collect} = get_binding(),
     Collect(MsgIn).
 
-%% (Msg, ReplyTo) -> ok
-msg_reply(Msg, From) ->
-    #een_binding{msg_reply = Reply} = get_binding(),
-    Reply(Msg, From).
+msg_reply(Reply, From) ->
+    #een_binding{msg_reply = MsgReply} = get_binding(),
+    MsgReply(Reply, From).
 
 %% ----------------------------------------------------------------------------
 %% Internal startup API
@@ -133,29 +129,28 @@ recv_reply_or_down(ReplyKey, Pid, Monitor) ->
 
 behaviour_info(callback) ->
     [
+        %% Name = atom()
+        %% Series = [Params]
+        %% Params = tuple()
+        %% ReplyTo = reply_to()
+        %% HandleReturn = {reply, Reply, NewState} |
+        %%                {noreply, NewState} |
+        %%                {stop, Reason, NewState}
+        %% ReplyId = reply_id()
+        %% ReplySeries = [Reply]
+        %% Reply = term()
+
         %% (OldModule, OldState, Args) ->
         %%     {ok, een_comp_params(), State} | {error, Error}
         {reinit, 3},
 
         %% (Name, Series, ReplyTo, State) -> HandleReturn
-        %% where
-        %%     Name = atom()
-        %%     Series = [Params]
-        %%     Params = tuple()
-        %%     ReplyTo = reply_to()
-        %%     HandleReturn = {reply, Reply, NewState} |
-        %%                    {noreply, NewState} |
-        %%                    {stop, Reason, NewState}
         {handle_call, 4},
 
         %% (Name, Series, State) -> HandleReturn
         {handle_cast, 3},
 
         %% (ReplyId, ReplySeries, State) -> HandleReturn
-        %% where
-        %%     ReplyId = reply_id()
-        %%     ReplySeries = [Reply]
-        %%     Reply = term()
         {handle_reply, 3},
 
         %% (Reason, State) -> _

@@ -16,7 +16,7 @@ reinit(_OldModule, _OldState, _Args) ->
      nostate}.
 
 handle_call(some_call, _Series, _From, State) ->
-    een_comp:out_cast(other_cast, {ok}),
+    een_comp:cast(other_cast, {ok}),
     {reply, ok, State}.
 
 handle_cast(some_cast, _Series, State) ->
