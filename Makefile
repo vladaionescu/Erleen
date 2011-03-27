@@ -66,7 +66,7 @@ $(EBIN_DIR)/%.beam: $(SOURCE_DIR)/%.erl $(INCLUDES)
 	erlc $(ERLC_OPTS) $<
 
 $(EBIN_DIR)/%.beam: $(SAMPLES_SOURCE_DIR)/%.erl $(TARGETS) $(INCLUDES)
-	erlc $(ERLC_OPTS) $<
+	erlc -pa $(TARGETS) $(ERLC_OPTS) $<
 
 $(TEST_TARGETS): $(TEST_DIR)
 

@@ -1,127 +1,29 @@
 
 -module(een_comp).
 
--include("erleen.hrl").
+-behaviour(een_gen).
 
--export([call/2, call_async/2, cast/2, reply/2]).
--export([start/3, start/2, bind/2, get_params/1, init/3]).
 -export([behaviour_info/1]).
+-export([start/2, out/2, reply/2]).
+-export([reinit/3, handle_cast/2, handle_call/3, handle_reply/3, terminate/2]).
 
--record(state, {mod,
-                mod_state,
-                params}).
-
-%% ----------------------------------------------------------------------------
-%% Message I/O API
-%% ----------------------------------------------------------------------------
-
-call(Call, Params) ->
-    {ok, ReplyId} = msg_out({call, Call, Params}),
-    block_on_reply(ReplyId).
-
-call_async(Call, Params) ->
-    msg_out({call, Call, Params}),
-    ok.
-
-cast(Cast, Params) ->
-    msg_out({cast, Cast, Params}),
-    ok.
-
-reply(_Msg, none) ->
-    ok;
-reply(Msg, From) ->
-    msg_reply(Msg, From),
-    ok.
+-record(state, {id = een_comp,
+                mod,
+                mst}).
 
 %% ----------------------------------------------------------------------------
-%% Message I/O internal
+%% Interface
 %% ----------------------------------------------------------------------------
-
-handle_msg(Msg) ->
-    case collect_in(Msg) of
-        {in, MsgInSeries, ReplyTo} -> cbk_handle_msg(MsgInSeries, ReplyTo);
-        noin                       -> ok
-    end.
-
-handle_reply(Reply) ->
-    case collect_reply(Reply) of
-        {reply, ReplyId, ReplySeries} -> cbk_handle_reply(ReplyId, ReplySeries);
-        noreply                       -> ok
-    end.
-
-block_on_reply(ReplyId) ->
-    Reply =
-        receive
-            {'$een_reply', ReplyId, ReplyBit} ->
-                {ReplyId, {reply, ReplyBit}};
-            {'DOWN', ReplyId, process, _, Reason} ->
-                {ReplyId, {reply_down, Reason}}
-        end,
-    case collect_reply(Reply) of
-        {reply, ReplyId, ReplySeries} -> ReplySeries;
-        noreply                       -> block_on_reply(ReplyId)
-    end.
-
-msg_out(MsgOut) ->
-    #een_binding{msg_out = Out} = get_binding(),
-    Out(MsgOut).
-
-collect_reply(Reply) ->
-    #een_binding{collect_reply = Collect} = get_binding(),
-    Collect(Reply).
-
-collect_in(MsgIn) ->
-    #een_binding{collect_in = Collect} = get_binding(),
-    Collect(MsgIn).
-
-msg_reply(Reply, From) ->
-    #een_binding{msg_reply = MsgReply} = get_binding(),
-    MsgReply(Reply, From).
-
-%% ----------------------------------------------------------------------------
-%% Internal startup API
-%% ----------------------------------------------------------------------------
-
-start(Node, Module, Args) ->
-    Parent = self(),
-    {Pid, Monitor} = spawn_opt(Node, ?MODULE, init, [Parent, Module, Args],
-                               [monitor]),
-    case recv_reply_or_down(Pid, Pid, Monitor) of
-        {reply, ok}    -> {ok, Pid};
-        {reply, Error} -> Error;
-        {down, Reason} -> {error, Reason}
-    end.
 
 start(Module, Args) ->
-    start(node(), Module, Args).
+    een_gen:start(?MODULE, [Module, Args]).
 
-bind(Pid, Binding = #een_binding{}) ->
-    case sync_reply_or_down(Pid, {'$een_bind', Binding, self()},
-                            '$een_bind_reply') of
-        {reply, ok}    -> ok;
-        {down, Reason} -> {error, Reason}
-    end.
+out(LocalIfId, Msg) ->
+    OutFun = get('$een_out_fun'),
+    OutFun(LocalIfId, Msg).
 
-get_params(Pid) ->
-    case sync_reply_or_down(Pid, {'$een_get_params', self()},
-                            '$een_get_params_reply') of
-        {reply, Params} -> {ok, Params};
-        {down, Reason}  -> {error, Reason}
-    end.
-
-sync_reply_or_down(Pid, Msg, ReplyKey) ->
-    M = erlang:monitor(process, Pid),
-    Pid ! Msg,
-    recv_reply_or_down(ReplyKey, Pid, M).
-
-recv_reply_or_down(ReplyKey, Pid, Monitor) ->
-    receive
-        {ReplyKey, Reply} ->
-            erlang:demonitor(Monitor, [flush]),
-            {reply, Reply};
-        {'DOWN', Monitor, process, Pid, Reason} ->
-            {down, Reason}
-    end.
+reply(From, Msg) ->
+    een_gen:reply(From, Msg).
 
 %% ----------------------------------------------------------------------------
 %% Behaviour spec
@@ -129,119 +31,107 @@ recv_reply_or_down(ReplyKey, Pid, Monitor) ->
 
 behaviour_info(callback) ->
     [
-        %% Name = atom()
-        %% Series = [Params]
-        %% Params = tuple()
-        %% ReplyTo = reply_to()
-        %% HandleReturn = {reply, Reply, NewState} |
-        %%                {noreply, NewState} |
-        %%                {stop, Reason, NewState}
-        %% ReplyId = reply_id()
-        %% ReplySeries = [Reply]
-        %% Reply = term()
+        %% Configuration = Comp
+        %% Comp = {CompId, CompType, MFA, Node, ChildrenConfig}
+        %% ChildrenConfig = {Comps, Bindings}
+        %% Comps = [Comp]
+        %% Bindings = [Binding]
+        %% Binding = {CompId1, IfId1, CompId2, IfId2}
 
-        %% (OldModule, OldState, Args) ->
-        %%     {ok, een_comp_params(), State} | {error, Error}
+        %% InBindings = OutBindings =
+        %%     [{LocalIfId, RemotePid, RemoteIfId}]
+
+        %% IfList = [{IfId, {call | cast, Arrity}}]
+        %% IfId = any()
+        %% Msg = {call | cast, Params}
+        %% Params = tuple()
+        %% TypeId = atom()
+        %% HandleReturn = {ok, NewState} | {reply, Reply, NewState} |
+        %%                {stop, Reason, NewState}
+
+        %% (OldModule, OldState, Args) -> {ok, State} | {error, Error}
         {reinit, 3},
 
-        %% (Name, Series, ReplyTo, State) -> HandleReturn
-        {handle_call, 4},
+        %% (State) -> IfList
+        {in_if, 1},
+        %% (State) -> IfList
+        {out_if, 1},
 
-        %% (Name, Series, State) -> HandleReturn
-        {handle_cast, 3},
-
-        %% (ReplyId, ReplySeries, State) -> HandleReturn
-        {handle_reply, 3},
+        %% (ChildrenConfig, State) -> HandleReturn
+        {handle_children_config, 2},
 
         %% (Reason, State) -> _
+        {shutdown_children, 2},
+
+        %% (IfId, Msg, From, State) -> HandleReturn
+        {handle_in, 4},
+
+        %% (MsgId, Reply, State) -> HandleReturn
+        {handle_reply, 3},
+
+        %% (Reason, State) -> NewReason
         {terminate, 2}
     ];
 behaviour_info(_) ->
     undefined.
 
 %% ----------------------------------------------------------------------------
-%% Main loop
+%% Gen callbacks
 %% ----------------------------------------------------------------------------
 
-init(Parent, Mod, ModArgs) ->
-    case Mod:reinit(undefined, undefined, ModArgs) of
-        {ok, Params = #een_comp_params{}, MState} ->
-            set_state(#state{mod = Mod, mod_state = MState, params = Params}),
-            Parent ! {self(), ok},
-            try loop() of _ -> exit(impossible)
-            catch exit:Reason -> cbk_terminate(Reason)
-            end;
-        {error, _} = E ->
-            Parent ! {self(), E}
+reinit(_OldModule, _OldState, [Mod, Args]) ->
+    case Mod:reinit(none, none, Args) of
+        {ok, Mst0}     -> {ok, #state{mod = Mod, mst = Mst0}};
+        {error, _} = E -> E
     end.
 
-loop() ->
-    receive
-        {'$een_msg', Msg} ->
-            handle_msg(Msg);
-        {'$een_reply', ReplyId, ReplyBit} ->
-            handle_reply({ReplyId, {reply, ReplyBit}});
-        {'DOWN', ReplyId, process, _Pid, Reason} ->
-            handle_reply({ReplyId, {reply_down, Reason}});
-        {'$een_bind', Binding, From} ->
-            set_binding(Binding),
-            From ! {'$een_bind_reply', ok};
-        {'$een_get_params', From} ->
-            #state{params = EenParams} = get_state(),
-            From ! {'$een_get_params_reply', EenParams}
-    end,
-    loop().
+handle_cast({msg, LocalId, Cast}, State) ->
+    do_handle_in(LocalId, {cast, Cast}, none, State).
+
+handle_call(get_ifs, _From, State = #state{mod = Mod, mst = Mst}) ->
+    {reply, {Mod:in_if(Mst), Mod:out_if(Mst)}, State};
+handle_call({set_bindings, _InBindings, OutBindings}, _From, State) ->
+    put('$een_out_fun', out_fun(OutBindings)),
+    {reply, ok, State};
+handle_call({set_children_config, Config}, _From,
+            State = #state{mod = Mod, mst = Mst}) ->
+    handle_return(Mod:handle_children_config(Config, Mst), State);
+handle_call({shutdown, Reason}, _From, State = #state{mod = Mod, mst = Mst}) ->
+    Mod:shutdown_children({parent_shutdown, Reason}, Mst),
+    {stop, {shutdown, Reason}, State};
+handle_call({msg, LocalId, Call}, From, State) ->
+    do_handle_in(LocalId, {call, Call}, From, State).
+
+%% TODO: 'DOWN' ?
+handle_reply(MsgId, Reply, State = #state{mod = Mod, mst = Mst}) ->
+    handle_return(Mod:handle_reply(MsgId, Reply, Mst), State).
+
+terminate(Reason, #state{mod = Mod, mst = Mst}) ->
+    Mod:terminate(Reason, Mst).
 
 %% ----------------------------------------------------------------------------
-%% Callback util
+%% Internal
 %% ----------------------------------------------------------------------------
 
-cbk_handle_msg(MsgInSeries, ReplyTo) ->
-    State = #state{mod = Mod, mod_state = MState} = get_state(),
-    Ret = case {MsgInSeries, ReplyTo} of
-              {{cast, Cast, Series}, none} ->
-                  Mod:handle_cast(Cast, Series, MState);
-              {{call, Call, Series}, _} ->
-                  Mod:handle_call(Call, Series, ReplyTo, MState)
-          end,
-    update_state_cbk(Ret, State),
-    case Ret of {noreply, _}      -> ok;
-                {reply, Reply, _} -> reply(ReplyTo, Reply);
-                {stop, Reason, _} -> exit(Reason)
+do_handle_in(IfId, Msg, From, State = #state{mod = Mod, mst = Mst}) ->
+    handle_return(Mod:handle_in(IfId, Msg, From, Mst), State).
+
+handle_return({ok, NewMst}, State) ->
+    {ok, State#state{mst = NewMst}};
+handle_return({reply, Reply, NewMst}, State) ->
+    {reply, Reply, State#state{mst = NewMst}};
+handle_return({stop, Reason, NewMst}, State) ->
+    {stop, Reason, State#state{mst = NewMst}}.
+
+out_fun(Bindings) ->
+    BindingsDict = orddict:from_list(Bindings),
+    %% TODO: optimize
+    fun (IfId, Msg) ->
+            {Pid, RemoteId} = dict:fetch(IfId, BindingsDict),
+            case Msg of
+                {cast, Cast} -> een_gen:cast(Pid, {msg, RemoteId, Cast});
+                {call, Call} -> een_gen:async_call(Pid, {msg, RemoteId, Call})
+                %{sync_call, SyncCall} ->
+                %    een_gen:call(Pid, {RemoteId, SyncCall})
+            end
     end.
-
-cbk_handle_reply(ReplyId, ReplySeries) ->
-    State = #state{mod = Mod, mod_state = MState} = get_state(),
-    Ret = Mod:handle_reply(ReplyId, ReplySeries, MState),
-    update_state_cbk(Ret, State),
-    case Ret of {noreply, _}      -> ok;
-                {reply, Reply, _} -> reply(none, Reply);
-                {stop, Reason, _} -> exit(Reason)
-    end.
-
-cbk_terminate(Reason) ->
-    #state{mod = Mod, mod_state = MState} = get_state(),
-    _ = Mod:terminate(Reason, MState).
-
-update_state_cbk(Ret, State) ->
-    NewMState = case Ret of {noreply, NMS}  -> NMS;
-                            {reply, _, NMS} -> NMS;
-                            {stop, _, NMS}  -> NMS
-                end,
-    set_state(State#state{mod_state = NewMState}).
-
-%% ----------------------------------------------------------------------------
-%% Misc
-%% ----------------------------------------------------------------------------
-
-get_binding() ->
-    get('$een_comp_binding').
-
-set_binding(NewBinding = #een_binding{}) ->
-    put('$een_comp_binding', NewBinding).
-
-get_state() ->
-    get('$een_comp_state').
-
-set_state(NewState = #state{}) ->
-    put('$een_comp_state', NewState).
