@@ -7,12 +7,17 @@
 %% Interface
 %% ----------------------------------------------------------------------------
 
-spawn_config({Id, _Type, {M, F, A}, _Node, ChildrenConfig} = Top) ->
+spawn_config({Id, Type, {M, F, A}, Node, ChildrenConfig} = Top) ->
     %% TODO: handle failures
     %% TODO: type?
-    %% TODO: Node
     io:format("Spawning config with top ~p~n", [Top]),
+    put('$een_children', ordsets:new()),
+    put('$een_child_node', Node),
+    put('$een_child_props', {Id, Type}),
     {ok, Pid} = apply(M, F, A),
+    put('$een_children', undefined),
+    put('$een_child_node', undefined),
+    put('$een_child_props', undefined),
     io:format("Done spawning top ~p : ~p~n", [Id, Pid]),
     ok = set_children_config(Pid, ChildrenConfig),
     {ok, Pid}.
@@ -21,7 +26,7 @@ set_children_config(Pid, ChildrenConfig) ->
     een_gen:call(Pid, {set_children_config, ChildrenConfig}).
 
 out(LocalIfId, Msg) ->
-    een_comp:out(LocalIfId, Msg).
+    een_out:send(LocalIfId, Msg).
 
 reply(From, Msg) ->
     een_comp:reply(From, Msg).

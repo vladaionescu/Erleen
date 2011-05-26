@@ -4,8 +4,9 @@
 -behaviour(een_gen).
 
 -export([behaviour_info/1]).
--export([start/2, out/2, reply/2]).
--export([reinit/3, handle_cast/2, handle_call/3, handle_reply/3, terminate/2]).
+-export([start/2, reply/2]).
+-export([reinit/3, handle_cast/2, handle_call/3, handle_reply/3, terminate/2,
+         handle_child_exit/3, handle_parent_exit/2]).
 
 -record(state, {id = een_comp,
                 mod,
@@ -16,11 +17,7 @@
 %% ----------------------------------------------------------------------------
 
 start(Module, Args) ->
-    een_gen:start(?MODULE, [Module, Args]).
-
-out(LocalIfId, Msg) ->
-    OutFun = get('$een_out_fun'),
-    OutFun(LocalIfId, Msg).
+    een_gen:start_child(?MODULE, [Module, Args]).
 
 reply(From, Msg) ->
     een_gen:reply(From, Msg).
@@ -46,7 +43,8 @@ behaviour_info(callback) ->
         %% Msg = {call | cast, Params}
         %% Params = tuple()
         %% TypeId = atom()
-        %% HandleReturn = {ok, NewState} | {reply, Reply, NewState} |
+        %% HandleReturn = {ok, NewState} |
+        %                 {reply, Reply, NewState} |
         %%                {stop, Reason, NewState}
 
         %% (OldModule, OldState, Args) -> {ok, State} | {error, Error}
@@ -69,6 +67,9 @@ behaviour_info(callback) ->
         %% (MsgId, Reply, State) -> HandleReturn
         {handle_reply, 3},
 
+        %% (Child, Reason, State) -> HandleReturn
+        {handle_child_exit, 3},
+
         %% (Reason, State) -> NewReason
         {terminate, 2}
     ];
@@ -80,6 +81,7 @@ behaviour_info(_) ->
 %% ----------------------------------------------------------------------------
 
 reinit(_OldModule, _OldState, [Mod, Args]) ->
+    een_out:reset(),
     case Mod:reinit(none, none, Args) of
         {ok, Mst0}     -> {ok, #state{mod = Mod, mst = Mst0}};
         {error, _} = E -> E
@@ -91,8 +93,7 @@ handle_cast({msg, LocalId, Cast}, State) ->
 handle_call(get_ifs, _From, State = #state{mod = Mod, mst = Mst}) ->
     {reply, {Mod:in_if(Mst), Mod:out_if(Mst)}, State};
 handle_call({set_bindings, _InBindings, OutBindings}, _From, State) ->
-    io:format("Setting bindings ~p in ~p~n", [OutBindings, self()]),
-    put('$een_out_fun', out_fun(OutBindings)),
+    een_out:set(OutBindings, ext),
     {reply, ok, State};
 handle_call({set_children_config, Config}, _From,
             State = #state{mod = Mod, mst = Mst}) ->
@@ -107,6 +108,16 @@ handle_call({msg, LocalId, Call}, From, State) ->
 %% TODO: 'DOWN' ?
 handle_reply(MsgId, Reply, State = #state{mod = Mod, mst = Mst}) ->
     handle_return(Mod:handle_reply(MsgId, Reply, Mst), State).
+
+handle_parent_exit(Reason, State) ->
+    NewReason = case Reason of
+                    {parent_death, _} -> Reason;
+                    _                 -> {parent_death, Reason}
+                end,
+    {stop, NewReason, State}.
+
+handle_child_exit(Child, Reason, State = #state{mod = Mod, mst = Mst}) ->
+    handle_return(Mod:handle_child_exit(Child, Reason, Mst), State).
 
 terminate(Reason, #state{mod = Mod, mst = Mst}) ->
     Mod:terminate(Reason, Mst).
@@ -124,16 +135,3 @@ handle_return({reply, Reply, NewMst}, State) ->
     {reply, Reply, State#state{mst = NewMst}};
 handle_return({stop, Reason, NewMst}, State) ->
     {stop, Reason, State#state{mst = NewMst}}.
-
-out_fun(Bindings) ->
-    BindingsDict = orddict:from_list(Bindings),
-    %% TODO: optimize
-    fun (IfId, Msg) ->
-            {Pid, RemoteId} = orddict:fetch(IfId, BindingsDict),
-            case Msg of
-                {cast, Cast} -> een_gen:cast(Pid, {msg, RemoteId, Cast});
-                {call, Call} -> een_gen:async_call(Pid, {msg, RemoteId, Call})
-                %{sync_call, SyncCall} ->
-                %    een_gen:call(Pid, {RemoteId, SyncCall})
-            end
-    end.
