@@ -32,7 +32,7 @@ compile_tests: $(TEST_TARGETS)
 run: $(ALL_TARGETS)
 	$(MAKE) start_aux_nodes
 	erl $(ERL_OPTS)
-	$(MAKE) start_aux_nodes
+	$(MAKE) stop_aux_nodes
 
 all_tests: $(ALL_TARGETS) $(TEST_TARGETS)
 	$(MAKE) EEN_AUX_NODES="$(EEN_AUX_NODES)" start_aux_nodes
@@ -66,7 +66,7 @@ $(EBIN_DIR)/%.beam: $(SOURCE_DIR)/%.erl $(INCLUDES)
 	erlc $(ERLC_OPTS) $<
 
 $(EBIN_DIR)/%.beam: $(SAMPLES_SOURCE_DIR)/%.erl $(TARGETS) $(INCLUDES)
-	erlc -pa $(TARGETS) $(ERLC_OPTS) $<
+	erlc $(ERLC_OPTS) $<
 
 $(TEST_TARGETS): $(TEST_DIR)
 

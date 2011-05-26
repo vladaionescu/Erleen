@@ -39,7 +39,7 @@ behaviour_info(callback) ->
         %% Binding = {CompId1, IfId1, CompId2, IfId2}
 
         %% InBindings = OutBindings =
-        %%     [{LocalIfId, RemotePid, RemoteIfId}]
+        %%     [{LocalIfId, {RemotePid, RemoteIfId}}]
 
         %% IfList = [{IfId, {call | cast, Arrity}}]
         %% IfId = any()
@@ -91,10 +91,12 @@ handle_cast({msg, LocalId, Cast}, State) ->
 handle_call(get_ifs, _From, State = #state{mod = Mod, mst = Mst}) ->
     {reply, {Mod:in_if(Mst), Mod:out_if(Mst)}, State};
 handle_call({set_bindings, _InBindings, OutBindings}, _From, State) ->
+    io:format("Setting bindings ~p in ~p~n", [OutBindings, self()]),
     put('$een_out_fun', out_fun(OutBindings)),
     {reply, ok, State};
 handle_call({set_children_config, Config}, _From,
             State = #state{mod = Mod, mst = Mst}) ->
+    io:format("Setting children config ~p in ~p~n", [Config, self()]),
     handle_return(Mod:handle_children_config(Config, Mst), State);
 handle_call({shutdown, Reason}, _From, State = #state{mod = Mod, mst = Mst}) ->
     Mod:shutdown_children({parent_shutdown, Reason}, Mst),
@@ -127,7 +129,7 @@ out_fun(Bindings) ->
     BindingsDict = orddict:from_list(Bindings),
     %% TODO: optimize
     fun (IfId, Msg) ->
-            {Pid, RemoteId} = dict:fetch(IfId, BindingsDict),
+            {Pid, RemoteId} = orddict:fetch(IfId, BindingsDict),
             case Msg of
                 {cast, Cast} -> een_gen:cast(Pid, {msg, RemoteId, Cast});
                 {call, Call} -> een_gen:async_call(Pid, {msg, RemoteId, Call})

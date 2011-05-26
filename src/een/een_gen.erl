@@ -13,10 +13,11 @@
 %% ----------------------------------------------------------------------------
 
 start(Module, Args) ->
-    spawn(fun () -> init(#state{mod = Module, mst = Args}) end).
+    {ok, spawn(fun () -> init(#state{mod = Module, mst = Args}) end)}.
 
 cast(Pid, Msg) ->
-    Pid ! {'$een_cast', Msg}.
+    Pid ! {'$een_cast', Msg},
+    ok.
 
 call(Pid, Msg) ->
     Monitor = do_call(Pid, Msg),
@@ -30,8 +31,9 @@ call(Pid, Msg) ->
 
 async_call(Pid, Msg) ->
     Monitor = do_call(Pid, Msg),
-    Futures = get('$reply_futures_set'),
-    put('$reply_futures_set', sets:add_element(Monitor, Futures)),
+    %% TODO: check reply against futures
+    %%Futures = get('$reply_futures_set'),
+    %%put('$reply_futures_set', ordsets:add_element(Monitor, Futures)),
     Monitor.
 
 do_call(Pid, Msg) ->
