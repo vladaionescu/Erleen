@@ -9,9 +9,6 @@
 
 -record(state, {got_ping = false}).
 
-start() ->
-    een_comp:start(?MODULE, []).
-
 reinit(_, _, []) ->
     {ok, #een_interface_spec{ext_in  = [#een_port_spec{name = ping_b,
                                                        msg_type = call,

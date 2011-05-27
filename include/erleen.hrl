@@ -3,9 +3,9 @@
                               bindings = []}).
 -record(een_component_spec, {id,
                              type, %% ?
-                             mfa,
-                             node,
-                             children_config = #een_children_config{}}).
+                             module,
+                             args = [],
+                             node}).
 -record(een_binding, {from, to}).
 -record(een_port, {comp_id, port_name}).
 

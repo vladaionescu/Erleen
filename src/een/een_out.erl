@@ -14,14 +14,14 @@ send(PortName, Msg) ->
     OutFun(PortName, Msg).
 
 set(Bindings, IfSpec, Loc) ->
-    io:format("~p: Setting ~p bindings ~p~n", [self(), Loc, Bindings]),
+    een:report("Setting ~p bindings ~p~n", [Loc, Bindings]),
     BindingsDict = orddict:from_list(Bindings),
     %% TODO: optimize
     OutFun =
         fun (PortName, Msg) ->
                 case orddict:find(PortName, BindingsDict) of
-                    {ok, {Pid, RemotePortName}} ->
-                        %io:format("msg ~p from (~p:~p) to (~p:~p)~n", [Msg, self(), PortName, Pid, RemotePortName]),
+                    {ok, [{Pid, RemotePortName}]} ->
+                        %io:format("msg ~p from (~p:~p:~p) to (?:~p:~p)~n", [Msg, get('$een_component_id'), self(), PortName, Pid, RemotePortName]),
                         case port_msg_type(PortName, IfSpec, Loc) of
                             cast -> een_gen:cast(Pid, {msg, RemotePortName, Msg});
                             call -> een_gen:async_call(Pid, {msg, RemotePortName, Msg})

@@ -131,7 +131,7 @@ loop(State = #state{mod = Mod, mst = Mst, parent = Parent}) ->
                               none, State);
             {'DOWN', Monitor, process, _Pid, Reason} ->
                 check_expected_reply(Monitor),
-                handle_return(Mod:handle_reply(Monitor, {'DOWN', Reason}, Mst),
+                handle_return(Mod:handle_reply(Monitor, {down, Reason}, Mst),
                               none, State);
             {'EXIT', Parent, Reason} ->
                 handle_return(Mod:handle_parent_exit(Reason, Mst), none, State);

@@ -12,9 +12,6 @@
                 got_reply = false,
                 got_pong1 = false}).
 
-start(Caller) ->
-    een_comp:start(?MODULE, [Caller]).
-
 reinit(_, _, [Caller]) ->
     {ok, #een_interface_spec{int_in  = [#een_port_spec{name = pong1_top,
                                                        msg_type = cast,

@@ -1,7 +1,7 @@
 
 -module(een_config).
 
--export([spawn/1, spawn_children/1, set_children_config/2, set_ext_bindings/3]).
+-export([spawn/1, respawn_child/3, set_children_config/2, set_ext_bindings/3]).
 
 -include_lib("erleen.hrl").
 
@@ -9,24 +9,25 @@
 %% Interface
 %% ----------------------------------------------------------------------------
 
-spawn(Config = #een_component_spec{children_config = ChildrenConfig}) ->
+spawn({Spec = #een_component_spec{}, ChildrenConfig}) ->
     put('$een_children', ordsets:new()),
-    {ok, Pid} = spawn_child(Config),
+    {ok, Pid} = respawn_child(Spec, none, none),
     put('$een_children', undefined),
     ok = set_children_config(Pid, ChildrenConfig),
     {ok, Pid}.
 
-spawn_child(#een_component_spec{id = Id,
-                                type = Type,
-                                mfa = {M, F, A},
-                                node = Node}) ->
+respawn_child(Spec = #een_component_spec{id = Id,
+                                         module = Module,
+                                         args = Args,
+                                         node = Node},
+              OldModule, OldState) ->
     %% TODO: type ?
     put('$een_child_node', Node),
-    put('$een_child_props', {Id, Type}),
-    {ok, Pid} = apply(M, F, A),
+    put('$een_child_component_spec', Spec),
+    {ok, Pid} = een_comp:start(OldModule, OldState, Module, Args),
     put('$een_child_node', undefined),
-    put('$een_child_props', undefined),
-    io:format("~p: Spawned child (~p : ~p) on node ~p.~n", [self(), Id, Pid, Node]),
+    put('$een_child_component_spec', undefined),
+    een:report("(Re)spawned child (~p:~p) on node ~p~n", [Id, Pid, Node]),
     {ok, Pid}.
 
 set_children_config(Pid, ChildrenConfig) ->
@@ -34,11 +35,3 @@ set_children_config(Pid, ChildrenConfig) ->
 
 set_ext_bindings(Pid, InBinds, OutBinds) ->
     een_gen:call(Pid, {set_ext_bindings, InBinds, OutBinds}).
-
-spawn_children(ChildConfigs) ->
-    %% TODO: handle failures
-    %% TODO: parallelize
-    lists:map(fun (Config) ->
-                      {ok, Pid} = spawn_child(Config),
-                      {Pid, Config}
-              end, ChildConfigs).

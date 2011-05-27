@@ -1,7 +1,7 @@
 
 -module(een).
 
--export([spawn_config/1, out/2, reply/2]).
+-export([spawn_config/1, out/2, reply/2, report/2]).
 
 %% ----------------------------------------------------------------------------
 %% Interface
@@ -15,3 +15,6 @@ out(PortName, Msg) ->
 
 reply(From, Msg) ->
     een_gen:reply(From, Msg).
+
+report(Format, Args) ->
+    io:format("(~p:~p) $ " ++ Format, [get('$een_component_id'), self()] ++ Args).

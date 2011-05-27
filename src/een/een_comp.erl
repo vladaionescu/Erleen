@@ -4,7 +4,7 @@
 -behaviour(een_gen).
 
 -export([behaviour_info/1]).
--export([start/2]).
+-export([start/4]).
 -export([reinit/3, handle_cast/2, handle_call/3, handle_reply/3, terminate/2,
          handle_child_exit/3, handle_parent_exit/2]).
 
@@ -14,25 +14,23 @@
                 mod,
                 mst,
                 if_spec,
-                comp_id,
-                comp_type,
+                spec,
                 map_comps,
                 map_pid_compid}).
 
--record(component, {id,
-                    pid,
-                    mfa,
-                    children_config,
+-record(component, {pid,
                     in_binds = orddict:new(),
-                    out_binds = orddict:new()}).
+                    out_binds = orddict:new(),
+                    spec,
+                    children_config}).
 
 %% ----------------------------------------------------------------------------
-%% Interface
+%% Internal interface
 %% ----------------------------------------------------------------------------
 
-start(Module, Args) ->
-    Props = get('$een_child_props'),
-    een_gen:start_child(?MODULE, [Module, Args, Props]).
+start(OldModule, OldState, Module, Args) ->
+    Spec = get('$een_child_component_spec'),
+    een_gen:start_child(?MODULE, [OldModule, OldState, Module, Args, Spec]).
 
 %% ----------------------------------------------------------------------------
 %% Behaviour spec
@@ -68,14 +66,15 @@ behaviour_info(_) ->
 %% Gen callbacks
 %% ----------------------------------------------------------------------------
 
-reinit(_OldModule, _OldState, [Mod, Args, {Id, Type}]) ->
+reinit(_OldModule, _OldState, [OldMod, OldMst, Mod, Args,
+                               Spec = #een_component_spec{id = Id}]) ->
+    put('$een_component_id', Id),
     een_out:reset(),
-    case Mod:reinit(none, none, Args) of
+    case Mod:reinit(OldMod, OldMst, Args) of
         {ok, InterfaceSpec = #een_interface_spec{}, Mst0} ->
             {ok, #state{mod = Mod,
                         mst = Mst0,
-                        comp_id = Id,
-                        comp_type = Type,
+                        spec = Spec,
                         if_spec = adjust_interface_spec(InterfaceSpec)}};
         {error, _} = E -> E
     end.
@@ -92,7 +91,6 @@ handle_call({set_children_config, Config}, _From, State) ->
 handle_call({msg, LocalId, Msg}, From, State) ->
     do_handle_in(LocalId, Msg, From, State).
 
-%% TODO: 'DOWN' ?
 handle_reply(MsgId, Reply, State = #state{mod = Mod, mst = Mst}) ->
     handle_return(Mod:handle_reply(MsgId, Reply, Mst), State).
 
@@ -103,8 +101,9 @@ handle_parent_exit(Reason, State) ->
                 end,
     {stop, NewReason, State}.
 
-handle_child_exit(Child, Reason, State = #state{mod = Mod, mst = Mst}) ->
-    handle_return(Mod:handle_child_exit(Child, Reason, Mst), State).
+handle_child_exit(_Pid, _Reason, State) ->
+    %% TODO
+    {ok, State}.
 
 terminate(Reason, #state{mod = Mod, mst = Mst}) ->
     Mod:terminate(Reason, Mst).
@@ -115,38 +114,38 @@ terminate(Reason, #state{mod = Mod, mst = Mst}) ->
 
 handle_children_config(Config = #een_children_config{children = Children,
                                                      bindings = Bindings},
-                       State = #state{comp_id = CompId}) ->
-    io:format("~p: Setting children config ~p~n", [self(), Config]),
-    SpawnedChildren = een_config:spawn_children(Children),
-    MCs =
-        orddict:store(
-            CompId,
-            #component{id = CompId,
-                       pid = self(),
-                       mfa = none,
-                       children_config = none,
-                       in_binds = [],
-                       out_binds = []},
-            orddict:new()),
-    MPC = orddict:store(self(), CompId, orddict:new()),
-    State1 =
-        lists:foldl(fun register_child/2, State#state{map_comps = MCs,
-                                                      map_pid_compid = MPC},
-                    SpawnedChildren),
-    State2 = lists:foldl(fun register_binding/2, State1, Bindings),
-    send_bindings_and_children_config(State2).
+                       State = #state{spec = Spec}) ->
+    een:report("Setting children config ~p~n", [Config]),
+    Id = Spec#een_component_spec.id,
+    %% TODO: check against existing components
+    MCs = orddict:store(Id, #component{pid = self(), spec = Spec}, orddict:new()),
+    State1 = lists:foldl(fun register_child/2, State#state{map_comps = MCs,
+                                                           map_pid_compid = orddict:new()},
+                         Children),
+    State2 = lists:foldl(fun spawn_child/2, State1, orddict:fetch_keys(State1#state.map_comps)),
+    State3 = lists:foldl(fun register_binding/2, State2, Bindings),
+    send_bindings_and_children_config(State3).
 
-register_child({Pid, #een_component_spec{id = Id,
-                                         mfa = MFA,
-                                         children_config = ChildrenConfig}},
-               State = #state{map_comps = MCs, map_pid_compid = MPC}) ->
-    MPC1 = orddict:store(Pid, Id, MPC),
-    MCs1 = orddict:store(Id, #component{id = Id,
-                                        pid = Pid,
-                                        mfa = MFA,
-                                        children_config = ChildrenConfig},
-                         MCs),
-    State#state{map_pid_compid = MPC1, map_comps = MCs1}.
+register_child({Spec = #een_component_spec{id = Id}, ChildrenConfig},
+               State = #state{map_comps = MCs}) ->
+    MCs1 = orddict:store(Id, #component{spec = Spec,
+                                        children_config = ChildrenConfig}, MCs),
+    State#state{map_comps = MCs1}.
+
+spawn_child(Id, State) ->
+    respawn_child(Id, none, none, State).
+
+respawn_child(Id, _, _, State = #state{spec = #een_component_spec{id = Id}}) ->
+    State;
+respawn_child(Id, OldModule, OldState, State = #state{map_comps = MCs,
+                                                      map_pid_compid = MPC}) ->
+    %% TODO: handle failures
+    Component = #component{pid = OldPid, spec = Spec} = orddict:fetch(Id, MCs),
+    {ok, NewPid} = een_config:respawn_child(Spec, OldModule, OldState),
+    NewMCs = orddict:store(Id, Component#component{pid = NewPid}, MCs),
+    MPC1 = orddict:erase(OldPid, MPC),
+    MPC2 = orddict:store(NewPid, Id, MPC1),
+    State#state{map_comps = NewMCs, map_pid_compid = MPC2}.
 
 register_binding(#een_binding{from = #een_port{comp_id = Id1,
                                                port_name = Port1},
@@ -156,22 +155,32 @@ register_binding(#een_binding{from = #een_port{comp_id = Id1,
     %% TODO: check validity
     #component{pid = Pid1, out_binds = OutBinds0} = orddict:fetch(Id1, MCs),
     #component{pid = Pid2, in_binds = InBinds0} = orddict:fetch(Id2, MCs),
-    OutBinds = [{Port1, {Pid2, Port2}} | OutBinds0],
-    InBinds = [{Port2, {Pid1, Port1}} | InBinds0],
+    Entry2 = {Pid2, Port2},
+    OutBinds1 =
+        orddict:update(Port1,
+                       fun (PortList) -> [Entry2 | PortList] end, [Entry2],
+                       OutBinds0),
+    %% TODO: do we need pids in inbinds ?? - perhaps keep symmetric somehow, if not
+    Entry1 = {Pid1, Port1},
+    InBinds1 =
+        orddict:update(Port2,
+                       fun (PortList) -> [Entry1 | PortList] end, [Entry1],
+                       InBinds0),
     MCs1 = orddict:update(
-               Id1, fun (C) -> C#component{out_binds = OutBinds} end, MCs),
+               Id1, fun (C) -> C#component{out_binds = OutBinds1} end, MCs),
     MCs2 = orddict:update(
-               Id2, fun (C) -> C#component{in_binds = InBinds} end, MCs1),
+               Id2, fun (C) -> C#component{in_binds = InBinds1} end, MCs1),
     State#state{map_comps = MCs2}.
 
-send_bindings_and_children_config(State = #state{comp_id = CompId1,
-                                                 map_comps = MCs,
+send_bindings_and_children_config(State = #state{map_comps = MCs,
+                                                 spec = #een_component_spec{id = SelfId},
                                                  if_spec = IfSpec}) ->
     %% TODO: parallelize
     %% TODO: handle failures
     orddict:fold(
-        fun (_, #component{id = CompId2, out_binds = OutBinds}, ok)
-                    when CompId1 =:= CompId2 ->
+        fun (_, #component{spec = #een_component_spec{id = Id},
+                           out_binds = OutBinds}, ok)
+                    when Id =:= SelfId ->
                 ok = een_out:set(OutBinds, IfSpec, int);
             (_, #component{pid = Pid,
                            in_binds = InBinds,

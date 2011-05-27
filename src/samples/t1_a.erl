@@ -11,9 +11,6 @@
                 got_pong2 = false,
                 got_reply = false}).
 
-start() ->
-    een_comp:start(?MODULE, []).
-
 reinit(_, _, []) ->
     {ok, #een_interface_spec{ext_in  = [#een_port_spec{name = ping_a,
                                                        msg_type = call,
