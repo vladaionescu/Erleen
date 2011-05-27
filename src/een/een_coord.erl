@@ -21,8 +21,8 @@
                     pid,
                     mfa,
                     children_config,
-                    in_binds = [],
-                    out_binds = []}).
+                    in_binds = orddict:new(),
+                    out_binds = orddict:new()}).
 
 %% ----------------------------------------------------------------------------
 %% Interface
@@ -41,17 +41,17 @@ behaviour_info(callback) ->
         %% (OldModule, OldState, Args) -> {ok, State} | {error, Error}
         {reinit, 3},
 
-        %% (State) -> IfList
+        %% (State) -> Interface
         {ext_in_if, 1},
-        %% (State) -> IfList
+        %% (State) -> Interface
         {ext_out_if, 1},
 
-        %% (State) -> IfList
+        %% (State) -> Interface
         {int_in_if, 1},
-        %% (State) -> IfList
+        %% (State) -> Interface
         {int_out_if, 1},
 
-        %% (IfId, Msg, From, State) -> HandleReturn
+        %% (PortName, Msg, From, State) -> HandleReturn
         {handle_in, 4},
 
         %% (MsgId, Reply, State) -> HandleReturn
@@ -129,12 +129,12 @@ register_child({Pid, {Id, _Type, MFA, _Node, ChildrenConfig}},
                          MCs),
     State#state{map_pid_compid = MPC1, map_comps = MCs1}.
 
-register_binding({Id1, IfId1, Id2, IfId2}, State = #state{map_comps = MCs}) ->
+register_binding({{Id1, Port1}, {Id2, Port2}}, State = #state{map_comps = MCs}) ->
     %% TODO: check validity
     #component{pid = Pid1, out_binds = OutBinds0} = orddict:fetch(Id1, MCs),
     #component{pid = Pid2, in_binds = InBinds0} = orddict:fetch(Id2, MCs),
-    OutBinds = [{IfId1, {Pid2, IfId2}} | OutBinds0],
-    InBinds = [{IfId2, {Pid1, IfId1}} | InBinds0],
+    OutBinds = [{Port1, {Pid2, Port2}} | OutBinds0],
+    InBinds = [{Port2, {Pid1, Port1}} | InBinds0],
     MCs1 = orddict:update(
                Id1, fun (C) -> C#component{out_binds = OutBinds} end, MCs),
     MCs2 = orddict:update(

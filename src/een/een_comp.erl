@@ -33,32 +33,47 @@ behaviour_info(callback) ->
         %% ChildrenConfig = {Comps, Bindings}
         %% Comps = [Comp]
         %% Bindings = [Binding]
-        %% Binding = {CompId1, IfId1, CompId2, IfId2}
+        %% Binding = {OutPort, InPort}
+        %% OutPort = InPort = Port
+        %% Port = {CompId, PortName}
 
         %% InBindings = OutBindings =
-        %%     [{LocalIfId, {RemotePid, RemoteIfId}}]
+        %%     [{LocalPortName, {RemotePid, RemotePortName}}]
 
-        %% IfList = [{IfId, {call | cast, Arrity}}]
-        %% IfId = any()
-        %% Msg = {call | cast, Params}
-        %% Params = tuple()
-        %% TypeId = atom()
+        %% Interface = [PortSpec]
+        %% PortSpec = {PortName, PortType, call | cast, Arrity}
+        %% PortName = any()
+        %% PortType = basic | multi | route
+        %% Msg = Params | [Params] | {Key, Params}
+        %% Params = {any()}
+        %% Key = any()
         %% HandleReturn = {ok, NewState} |
         %%                {reply, Reply, NewState} |
         %%                {stop, Reason, NewState}
 
+        %% Allowed binding types:
+        %%
+        %% Sender  - Receiver            Sender        : Receiver          Sender     : Receiver
+        %% --------------------------------------------------------------------------------------
+        %% basic   - basic        (Msg = Params        : Params,   Reply = ReplyBit   : ReplyBit)
+        %% [basic] - basic        (Msg = Params        : Params,   Reply = ReplyBit   : ReplyBit)
+        %% basic   - [basic]      (Msg = Params        : Params,   Reply = ReplyBit   : ReplyBit)
+        %% [basic] - multi        (Msg = Params        : [Params], Reply = ReplyBit   : ReplyBit)
+        %% multi   - [basic]      (Msg = Params        : Params,   Reply = [ReplyBit] : ReplyBit)
+        %% route   - [basic]      (Msg = {Key, Params} : Params,   Reply = ReplyBit   : ReplyBit)
+
         %% (OldModule, OldState, Args) -> {ok, State} | {error, Error}
         {reinit, 3},
 
-        %% (State) -> IfList
+        %% (State) -> Interface
         {in_if, 1},
-        %% (State) -> IfList
+        %% (State) -> Interface
         {out_if, 1},
 
         %% (ChildrenConfig, State) -> HandleReturn
         {handle_children_config, 2},
 
-        %% (IfId, Msg, From, State) -> HandleReturn
+        %% (PortName, Msg, From, State) -> HandleReturn
         {handle_in, 4},
 
         %% (MsgId, Reply, State) -> HandleReturn
@@ -84,8 +99,8 @@ reinit(_OldModule, _OldState, [Mod, Args]) ->
         {error, _} = E -> E
     end.
 
-handle_cast({msg, LocalId, Cast}, State) ->
-    do_handle_in(LocalId, {cast, Cast}, none, State).
+handle_cast({msg, LocalId, Msg}, State) ->
+    do_handle_in(LocalId, Msg, none, State).
 
 handle_call(get_ifs, _From, State = #state{mod = Mod, mst = Mst}) ->
     {reply, {Mod:in_if(Mst), Mod:out_if(Mst)}, State};
@@ -96,8 +111,8 @@ handle_call({set_children_config, Config}, _From,
             State = #state{mod = Mod, mst = Mst}) ->
     io:format("Setting children config ~p in ~p~n", [Config, self()]),
     handle_return(Mod:handle_children_config(Config, Mst), State);
-handle_call({msg, LocalId, Call}, From, State) ->
-    do_handle_in(LocalId, {call, Call}, From, State).
+handle_call({msg, LocalId, Msg}, From, State) ->
+    do_handle_in(LocalId, Msg, From, State).
 
 %% TODO: 'DOWN' ?
 handle_reply(MsgId, Reply, State = #state{mod = Mod, mst = Mst}) ->

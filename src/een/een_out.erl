@@ -7,27 +7,27 @@
 %% Internal interface
 %% ----------------------------------------------------------------------------
 
-send(LocalIfId, Msg) ->
+send(PortName, Msg) ->
     OutFun = get('$een_out_fun'),
-    OutFun(LocalIfId, Msg).
+    OutFun(PortName, Msg).
 
 set(Bindings, Loc) ->
-    io:format("Setting ~p bindings ~p in ~p~n", [Loc, Bindings, self()]),
+    io:format("~p: Setting ~p bindings ~p~n", [self(), Loc, Bindings]),
     BindingsDict = orddict:from_list(Bindings),
     %% TODO: optimize
     OutFun =
-        fun (IfId, Msg) ->
-                case orddict:find(IfId, BindingsDict) of
+        fun (PortName, Msg) ->
+                case orddict:find(PortName, BindingsDict) of
                     {ok, {Pid, RemoteId}} ->
                         %io:format("msg ~p to ~p~n", [{IfId, Msg}, {Pid, RemoteId}]),
-                        case Msg of
-                            {cast, Cast} -> een_gen:cast(Pid, {msg, RemoteId, Cast});
-                            {call, Call} -> een_gen:async_call(Pid, {msg, RemoteId, Call})
+                        case PortName of
+                            {_, cast} -> een_gen:cast(Pid, {msg, RemoteId, Msg});
+                            {_, call} -> een_gen:async_call(Pid, {msg, RemoteId, Msg})
                             %{sync_call, SyncCall} ->
                             %    een_gen:call(Pid, {RemoteId, SyncCall})
                         end;
                     error ->
-                        throw({invalid_message, IfId})
+                        throw({invalid_message, PortName})
                 end
         end,
     Key = case Loc of
@@ -38,7 +38,7 @@ set(Bindings, Loc) ->
     join().
 
 reset() ->
-    OutFun = fun (IfId, _Msg) -> throw({invalid_message, IfId}) end,
+    OutFun = fun (PortName, _Msg) -> throw({invalid_message, PortName}) end,
     put('$een_ext_out_fun', OutFun),
     put('$een_int_out_fun', OutFun),
     put('$een_out_fun', OutFun),
@@ -48,11 +48,11 @@ join() ->
     ExtOutFun = get('$een_ext_out_fun'),
     IntOutFun = get('$een_int_out_fun'),
     OutFun =
-        fun (IfId, Msg) ->
-            try IntOutFun(IfId, Msg) of
+        fun (PortName, Msg) ->
+            try IntOutFun(PortName, Msg) of
                 Ret -> Ret
             catch
-                throw:{invalid_message, IfId} -> ExtOutFun(IfId, Msg)
+                throw:{invalid_message, PortName} -> ExtOutFun(PortName, Msg)
             end
         end,
     put('$een_out_fun', OutFun),

@@ -1,7 +1,7 @@
 
 -module(t1_top).
 
--behaviour(een_top).
+-behaviour(een_coord).
 
 -compile(export_all).
 
@@ -11,26 +11,32 @@
                 got_pong1 = false}).
 
 start(Caller) ->
-    een_top:start(?MODULE, [Caller]).
+    een_coord:start(?MODULE, [Caller]).
 
 reinit(_, _, [Caller]) ->
     {ok, #state{caller = Caller}}.
 
 int_in_if(_) ->
-    [{pong1_top, {cast, 0}}].
+    [{pong1_top, basic, cast, 0}].
 
 int_out_if(_) ->
-    [{ping_top, {call, 0}}].
+    [{ping_top, basic, call, 0}].
 
-handle_in(pong1_top, {cast, []}, _From, State = #state{sent = {true, _}, got_pong1 = false, caller = Caller}) ->
+ext_in_if(_) ->
+    [].
+
+ext_out_if(_) ->
+    [].
+
+handle_in(pong1_top, {}, _From, State = #state{sent = {true, _}, got_pong1 = false, caller = Caller}) ->
     NewState = State#state{got_pong1 = true},
     case NewState of
         #state{got_reply = true} -> Caller ! pong_out,
                                     {stop, normal, NewState};
         _                        -> {ok, NewState}
     end;
-handle_in(ping_in, {cast, []}, _From, State = #state{sent = false}) -> %% fake in
-    MsgId = een:out(ping_top, {call, []}),
+handle_in(ping_in, {}, _From, State = #state{sent = false}) -> %% fake in
+    MsgId = een:out(ping_top, {}),
     {ok, State#state{sent = {true, MsgId}}}.
 
 handle_reply(MsgId, {reply, pong}, State = #state{sent = {true, MsgId}, got_reply = false, caller = Caller}) ->

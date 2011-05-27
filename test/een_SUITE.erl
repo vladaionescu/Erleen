@@ -13,12 +13,12 @@ t1() ->
         {top, type, {t1_top, start, [self()]}, make_node(w3),
          {[{a, type, {t1_a, start, []}, make_node(w1), {[], []}},
            {b, type, {t1_b, start, []}, make_node(w2), {[], []}}],
-          [{top, ping_top, a, ping_a},
-           {a, ping_a, b, ping_b},
-           {b, pong1_b, top, pong1_top},
-           {b, pong2_b, a, pong2_a}]}},
+          [{{top, ping_top}, {a, ping_a}},
+           {{a, ping_a}, {b, ping_b}},
+           {{b, pong1_b}, {top, pong1_top}},
+           {{b, pong2_b}, {a, pong2_a}}]}},
     {ok, Top} = een:spawn_config(Config),
-    een_gen:cast(Top, {msg, ping_in, []}), %% Fake
+    een_gen:cast(Top, {msg, ping_in, {}}), %% Fake
     receive pong_out -> ok end.
 
 repeat(Fun, Times) ->
