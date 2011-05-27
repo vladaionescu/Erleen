@@ -1,9 +1,11 @@
 
 -module(t1_top).
 
--behaviour(een_coord).
+-behaviour(een_comp).
 
 -compile(export_all).
+
+-include_lib("erleen.hrl").
 
 -record(state, {caller,
                 sent = false,
@@ -11,22 +13,19 @@
                 got_pong1 = false}).
 
 start(Caller) ->
-    een_coord:start(?MODULE, [Caller]).
+    een_comp:start(?MODULE, [Caller]).
 
 reinit(_, _, [Caller]) ->
-    {ok, #state{caller = Caller}}.
-
-int_in_if(_) ->
-    [{pong1_top, basic, cast, 0}].
-
-int_out_if(_) ->
-    [{ping_top, basic, call, 0}].
-
-ext_in_if(_) ->
-    [].
-
-ext_out_if(_) ->
-    [].
+    {ok, #een_interface_spec{int_in  = [#een_port_spec{name = pong1_top,
+                                                       msg_type = cast,
+                                                       arrity = 0}],
+                             int_out = [#een_port_spec{name = ping_top,
+                                                       msg_type = call,
+                                                       arrity = 0}],
+                             ext_in  = [#een_port_spec{name = ping_in,
+                                                       msg_type = cast,
+                                                       arrity = 0}]},
+     #state{caller = Caller}}.
 
 handle_in(pong1_top, {}, _From, State = #state{sent = {true, _}, got_pong1 = false, caller = Caller}) ->
     NewState = State#state{got_pong1 = true},

@@ -1,20 +1,25 @@
 
 -module(een_config).
 
--export([spawn/1, spawn_children/1, set_children_config/2, set_bindings/3]).
+-export([spawn/1, spawn_children/1, set_children_config/2, set_ext_bindings/3]).
+
+-include_lib("erleen.hrl").
 
 %% ----------------------------------------------------------------------------
 %% Interface
 %% ----------------------------------------------------------------------------
 
-spawn(Config = {_, _, _, _, ChildrenConfig}) ->
+spawn(Config = #een_component_spec{children_config = ChildrenConfig}) ->
     put('$een_children', ordsets:new()),
     {ok, Pid} = spawn_child(Config),
     put('$een_children', undefined),
     ok = set_children_config(Pid, ChildrenConfig),
     {ok, Pid}.
 
-spawn_child({Id, Type, {M, F, A}, Node, _ChildrenConfig}) ->
+spawn_child(#een_component_spec{id = Id,
+                                type = Type,
+                                mfa = {M, F, A},
+                                node = Node}) ->
     %% TODO: type ?
     put('$een_child_node', Node),
     put('$een_child_props', {Id, Type}),
@@ -27,8 +32,8 @@ spawn_child({Id, Type, {M, F, A}, Node, _ChildrenConfig}) ->
 set_children_config(Pid, ChildrenConfig) ->
     een_gen:call(Pid, {set_children_config, ChildrenConfig}).
 
-set_bindings(Pid, InBinds, OutBinds) ->
-    een_gen:call(Pid, {set_bindings, InBinds, OutBinds}).
+set_ext_bindings(Pid, InBinds, OutBinds) ->
+    een_gen:call(Pid, {set_ext_bindings, InBinds, OutBinds}).
 
 spawn_children(ChildConfigs) ->
     %% TODO: handle failures

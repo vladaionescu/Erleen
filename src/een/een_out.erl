@@ -1,7 +1,9 @@
 
 -module(een_out).
 
--export([send/2, set/2, reset/0]).
+-export([send/2, set/3, reset/0]).
+
+-include_lib("erleen.hrl").
 
 %% ----------------------------------------------------------------------------
 %% Internal interface
@@ -11,20 +13,18 @@ send(PortName, Msg) ->
     OutFun = get('$een_out_fun'),
     OutFun(PortName, Msg).
 
-set(Bindings, Loc) ->
+set(Bindings, IfSpec, Loc) ->
     io:format("~p: Setting ~p bindings ~p~n", [self(), Loc, Bindings]),
     BindingsDict = orddict:from_list(Bindings),
     %% TODO: optimize
     OutFun =
         fun (PortName, Msg) ->
                 case orddict:find(PortName, BindingsDict) of
-                    {ok, {Pid, RemoteId}} ->
-                        %io:format("msg ~p to ~p~n", [{IfId, Msg}, {Pid, RemoteId}]),
-                        case PortName of
-                            {_, cast} -> een_gen:cast(Pid, {msg, RemoteId, Msg});
-                            {_, call} -> een_gen:async_call(Pid, {msg, RemoteId, Msg})
-                            %{sync_call, SyncCall} ->
-                            %    een_gen:call(Pid, {RemoteId, SyncCall})
+                    {ok, {Pid, RemotePortName}} ->
+                        %io:format("msg ~p from (~p:~p) to (~p:~p)~n", [Msg, self(), PortName, Pid, RemotePortName]),
+                        case port_msg_type(PortName, IfSpec, Loc) of
+                            cast -> een_gen:cast(Pid, {msg, RemotePortName, Msg});
+                            call -> een_gen:async_call(Pid, {msg, RemotePortName, Msg})
                         end;
                     error ->
                         throw({invalid_message, PortName})
@@ -57,3 +57,12 @@ join() ->
         end,
     put('$een_out_fun', OutFun),
     ok.
+
+port_msg_type(Name, #een_interface_spec{ext_out = OutSpec}, ext) ->
+    port_msg_type2(Name, OutSpec);
+port_msg_type(Name, #een_interface_spec{int_out = OutSpec}, int) ->
+    port_msg_type2(Name, OutSpec).
+
+port_msg_type2(Name, OutSpec) ->
+    #een_port_spec{msg_type = MsgType} = orddict:fetch(Name, OutSpec),
+    MsgType.

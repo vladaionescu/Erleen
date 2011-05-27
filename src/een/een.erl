@@ -14,4 +14,4 @@ out(PortName, Msg) ->
     een_out:send(PortName, Msg).
 
 reply(From, Msg) ->
-    een_comp:reply(From, Msg).
+    een_gen:reply(From, Msg).

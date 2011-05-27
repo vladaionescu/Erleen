@@ -1,37 +1,35 @@
 
 -module(t1_a).
 
--behaviour(een_coord).
+-behaviour(een_comp).
 
 -compile(export_all).
+
+-include_lib("erleen.hrl").
 
 -record(state, {got_ping = false,
                 got_pong2 = false,
                 got_reply = false}).
 
 start() ->
-    een_coord:start(?MODULE, []).
+    een_comp:start(?MODULE, []).
 
 reinit(_, _, []) ->
-    {ok, #state{}}.
+    {ok, #een_interface_spec{ext_in  = [#een_port_spec{name = ping_a,
+                                                       msg_type = call,
+                                                       arrity = 0},
+                                        #een_port_spec{name = pong2_a,
+                                                       msg_type = call,
+                                                       arrity = 0}],
+                             ext_out = [#een_port_spec{name = ping_a,
+                                                       msg_type = call,
+                                                       arrity = 0}]},
+     #state{}}.
 
-ext_in_if(_) ->
-    [{ping_a, basic, call, 0},
-     {pong2_a, basic, cast, 0}].
-
-ext_out_if(_) ->
-    [{{ping_a, call}, 0}].
-
-int_in_if(_) ->
-    [].
-
-int_out_if(_) ->
-    [].
-
-handle_in({ping_a, call}, [], From, State = #state{got_ping = false, got_pong2 = false, got_reply = false}) ->
+handle_in(ping_a, {}, From, State = #state{got_ping = false, got_pong2 = false, got_reply = false}) ->
     MsgId = een:out(ping_a, {}),
     {ok, State#state{got_ping = {true, MsgId, From}}};
-handle_in({pong2_a, cast}, [], _From, State = #state{got_ping = {true, _, From}, got_pong2 = false}) ->
+handle_in(pong2_a, {}, _From, State = #state{got_ping = {true, _, From}, got_pong2 = false}) ->
     case State of
         #state{got_reply = true} -> een:reply(From, pong);
         _                        -> ok
