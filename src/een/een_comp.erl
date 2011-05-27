@@ -44,7 +44,7 @@ behaviour_info(callback) ->
         %% Params = tuple()
         %% TypeId = atom()
         %% HandleReturn = {ok, NewState} |
-        %                 {reply, Reply, NewState} |
+        %%                {reply, Reply, NewState} |
         %%                {stop, Reason, NewState}
 
         %% (OldModule, OldState, Args) -> {ok, State} | {error, Error}
@@ -57,9 +57,6 @@ behaviour_info(callback) ->
 
         %% (ChildrenConfig, State) -> HandleReturn
         {handle_children_config, 2},
-
-        %% (Reason, State) -> _
-        {shutdown_children, 2},
 
         %% (IfId, Msg, From, State) -> HandleReturn
         {handle_in, 4},
@@ -99,9 +96,6 @@ handle_call({set_children_config, Config}, _From,
             State = #state{mod = Mod, mst = Mst}) ->
     io:format("Setting children config ~p in ~p~n", [Config, self()]),
     handle_return(Mod:handle_children_config(Config, Mst), State);
-handle_call({shutdown, Reason}, _From, State = #state{mod = Mod, mst = Mst}) ->
-    Mod:shutdown_children({parent_shutdown, Reason}, Mst),
-    {stop, {shutdown, Reason}, State};
 handle_call({msg, LocalId, Call}, From, State) ->
     do_handle_in(LocalId, {call, Call}, From, State).
 

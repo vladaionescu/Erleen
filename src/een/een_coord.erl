@@ -6,7 +6,7 @@
 -export([behaviour_info/1]).
 -export([start/2]).
 -export([reinit/3, in_if/1, out_if/1, handle_children_config/2,
-         handle_child_exit/3, shutdown_children/2, handle_in/4, handle_reply/3,
+         handle_child_exit/3, handle_in/4, handle_reply/3,
          terminate/2]).
 
 -record(state, {id = een_coord,
@@ -93,6 +93,7 @@ handle_child_exit(_Child, _Reason, State) ->
     {ok, State}.
 
 handle_children_config({Comps, Bindings}, State = #state{comp_id = CompId}) ->
+    Children = een_config:spawn_children(Comps),
     MCs =
         orddict:store(
             CompId,
@@ -104,13 +105,12 @@ handle_children_config({Comps, Bindings}, State = #state{comp_id = CompId}) ->
                        out_binds = []},
             orddict:new()),
     MPC = orddict:store(self(), CompId, orddict:new()),
-    {ok, State1} = spawn_children(Comps, State#state{map_comps = MCs,
-                                                     map_pid_compid = MPC}),
-    {ok, State2} = generate_pid_bindings(Bindings, State1),
+    State1 =
+        lists:foldl(fun register_child/2, State#state{map_comps = MCs,
+                                                      map_pid_compid = MPC},
+                    Children),
+    State2 = lists:foldl(fun register_binding/2, State1, Bindings),
     send_bindings_and_children_config(State2).
-
-shutdown_children(_Reason, _State) ->
-    todo.
 
 terminate(Reason, #state{mod = Mod, mst = Mst}) ->
     Mod:terminate(Reason, Mst).
@@ -119,35 +119,18 @@ terminate(Reason, #state{mod = Mod, mst = Mst}) ->
 %% Internal
 %% ----------------------------------------------------------------------------
 
-spawn_children([], State) ->
-    {ok, State};
-spawn_children([{Id, Type, MFA = {M, F, A}, Node, ChildrenConfig} = Config | Rest],
-               State = #state{map_pid_compid = MPC, map_comps = MCs}) ->
-    %% TODO: link here
-    %% TODO: handle failures
-    %% TODO: parallelize
-    %% TODO: type?
-    %% TODO: Node
-    io:format("Spawning child of ~p with config ~p~n", [self(), Config]),
-    put('$een_child_node', Node),
-    put('$een_child_props', {Id, Type}),
-    {ok, Pid} = apply(M, F, A),
-    put('$een_child_node', undefined),
-    put('$een_child_props', undefined),
-    io:format("Done spawning child of ~p. ~p : ~p~n", [self(), Id, Pid]),
-    link(Pid),
+register_child({Pid, {Id, _Type, MFA, _Node, ChildrenConfig}},
+               State = #state{map_comps = MCs, map_pid_compid = MPC}) ->
     MPC1 = orddict:store(Pid, Id, MPC),
     MCs1 = orddict:store(Id, #component{id = Id,
                                         pid = Pid,
                                         mfa = MFA,
                                         children_config = ChildrenConfig},
                          MCs),
-    spawn_children(Rest, State#state{map_pid_compid = MPC1, map_comps = MCs1}).
+    State#state{map_pid_compid = MPC1, map_comps = MCs1}.
 
-generate_pid_bindings([], State) ->
-    {ok, State};
-generate_pid_bindings([{Id1, IfId1, Id2, IfId2} | Rest],
-                      State = #state{map_comps = MCs}) ->
+register_binding({Id1, IfId1, Id2, IfId2}, State = #state{map_comps = MCs}) ->
+    %% TODO: check validity
     #component{pid = Pid1, out_binds = OutBinds0} = orddict:fetch(Id1, MCs),
     #component{pid = Pid2, in_binds = InBinds0} = orddict:fetch(Id2, MCs),
     OutBinds = [{IfId1, {Pid2, IfId2}} | OutBinds0],
@@ -156,7 +139,7 @@ generate_pid_bindings([{Id1, IfId1, Id2, IfId2} | Rest],
                Id1, fun (C) -> C#component{out_binds = OutBinds} end, MCs),
     MCs2 = orddict:update(
                Id2, fun (C) -> C#component{in_binds = InBinds} end, MCs1),
-    generate_pid_bindings(Rest, State#state{map_comps = MCs2}).
+    State#state{map_comps = MCs2}.
 
 send_bindings_and_children_config(State = #state{comp_id = CompId1,
                                                  map_comps = MCs}) ->
@@ -170,8 +153,8 @@ send_bindings_and_children_config(State = #state{comp_id = CompId1,
                            in_binds = InBinds,
                            out_binds = OutBinds,
                            children_config = ChildrenConfig}, ok) ->
-                ok = een_gen:call(Pid, {set_bindings, InBinds, OutBinds}),
-                ok = een_gen:call(Pid, {set_children_config, ChildrenConfig})
+                ok = een_config:set_bindings(Pid, InBinds, OutBinds),
+                ok = een_config:set_children_config(Pid, ChildrenConfig)
         end, ok, MCs),
     {reply, ok, State}.
 
