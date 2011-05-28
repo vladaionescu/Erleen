@@ -24,7 +24,7 @@ reinit(_, _, []) ->
      #state{}}.
 
 handle_in(ping_a, {}, From, State = #state{got_ping = false, got_pong2 = false, got_reply = false}) ->
-    MsgId = een:out(ping_a, {}),
+    {ok, MsgId} = een:out(ping_a, {}),
     {ok, State#state{got_ping = {true, MsgId, From}}};
 handle_in(pong2_a, {}, _From, State = #state{got_ping = {true, _, From}, got_pong2 = false}) ->
     case State of

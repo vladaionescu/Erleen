@@ -31,8 +31,8 @@ handle_in(pong1_top, {}, _From, State = #state{sent = {true, _}, got_pong1 = fal
                                     {stop, normal, NewState};
         _                        -> {ok, NewState}
     end;
-handle_in(ping_in, {}, _From, State = #state{sent = false}) -> %% fake in
-    MsgId = een:out(ping_top, {}),
+handle_in(ping_in, {}, _From, State = #state{sent = false}) ->
+    {ok, MsgId} = een:out(ping_top, {}),
     {ok, State#state{sent = {true, MsgId}}}.
 
 handle_reply(MsgId, {reply, pong}, State = #state{sent = {true, MsgId}, got_reply = false, caller = Caller}) ->

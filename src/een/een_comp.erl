@@ -74,13 +74,14 @@ behaviour_info(_) ->
 reinit(_OldModule, _OldState, [OldMod, OldMst, Mod, Args,
                                Spec = #een_component_spec{id = Id}]) ->
     put('$een_component_id', Id),
-    een_out:reset(),
     case Mod:reinit(OldMod, OldMst, Args) of
         {ok, InterfaceSpec = #een_interface_spec{}, Mst0} ->
-            {ok, #state{mod = Mod,
-                        mst = Mst0,
-                        spec = Spec,
-                        if_spec = adjust_interface_spec(InterfaceSpec)}};
+            State0 = #state{mod = Mod,
+                            mst = Mst0,
+                            spec = Spec,
+                            if_spec = adjust_interface_spec(InterfaceSpec)},
+            set_out(State0),
+            {ok, State0};
         {error, _} = E -> E
     end.
 
@@ -115,23 +116,35 @@ terminate(Reason, #state{mod = Mod, mst = Mst}) ->
 %% Internal
 %% ----------------------------------------------------------------------------
 
-set_ext_bindings(InBindings, OutBindings,
-                 State = #state{if_spec = IfSpec = #een_interface_spec{ext_in = ExtInPorts},
-                                multi_buf = MultiBuf}) ->
+set_ext_bindings(InBinds, OutBinds,
+                 State = #state{if_spec = #een_interface_spec{ext_in = InSpec}}) ->
+    NewState = reset_multi_buf(InBinds, InSpec,
+                               State#state{ext_in_binds = InBinds,
+                                           ext_out_binds = OutBinds}),
+    set_out(NewState),
+    NewState.
+
+set_int_bindings(InBinds, OutBinds,
+                 State = #state{if_spec = #een_interface_spec{int_in = InSpec}}) ->
+    NewState = reset_multi_buf(InBinds, InSpec,
+                               State#state{int_in_binds = InBinds,
+                                           int_out_binds = OutBinds}),
+    set_out(NewState),
+    NewState.
+
+reset_multi_buf(InBinds, InSpec,
+                State = #state{multi_buf = MultiBuf}) ->
     %% TODO: allow for multi buffered messages not to be lost on changing bindings
-    MultiBuf =
+    NewMultiBuf =
         orddict:fold(fun (PortName, #een_port_spec{type = multi}, CurMultiBuf) ->
                              een_multi_buffer:new_buffer(
                                  PortName,
-                                 length(orddict:fetch(PortName, InBindings)),
+                                 length(orddict:fetch(PortName, InBinds)),
                                  CurMultiBuf);
                          (_, _, CurMultiBuf) ->
                              CurMultiBuf
-                     end, MultiBuf, ExtInPorts),
-    een_out:set(OutBindings, IfSpec, ext),
-    State#state{ext_in_binds = InBindings,
-                ext_out_binds = OutBindings,
-                multi_buf = MultiBuf}.
+                     end, MultiBuf, InSpec),
+    State#state{multi_buf = NewMultiBuf}.
 
 handle_children_config(Config = #een_children_config{children = Children,
                                                      bindings = Bindings},
@@ -146,7 +159,7 @@ handle_children_config(Config = #een_children_config{children = Children,
                          Children),
     State2 = lists:foldl(fun spawn_child/2, State1, orddict:fetch_keys(State1#state.map_comps)),
     State3 = lists:foldl(fun register_binding/2, State2, Bindings),
-    State4 = set_int_bindings_and_children_config(State3),
+    State4 = set_children_int_bindings_and_config(State3),
     {reply, ok, State4}.
 
 register_child({Spec = #een_component_spec{id = Id}, ChildrenConfig},
@@ -195,9 +208,9 @@ register_binding(#een_binding{from = #een_port{comp_id = Id1,
                Id2, fun (C) -> C#component{in_binds = InBinds1} end, MCs1),
     State#state{map_comps = MCs2}.
 
-set_int_bindings_and_children_config(State = #state{map_comps = MCs,
-                                                    spec = #een_component_spec{id = SelfId},
-                                                    if_spec = IfSpec}) ->
+set_children_int_bindings_and_config(
+        State = #state{map_comps = MCs,
+                       spec = #een_component_spec{id = SelfId}}) ->
     %% TODO: parallelize
     %% TODO: handle failures
     orddict:fold(
@@ -205,9 +218,7 @@ set_int_bindings_and_children_config(State = #state{map_comps = MCs,
                             out_binds = OutBinds},
              CurState)
                     when Id =:= SelfId ->
-                ok = een_out:set(OutBinds, IfSpec, int),
-                CurState#state{int_in_binds = InBinds,
-                               int_out_binds = OutBinds};
+                set_int_bindings(InBinds, OutBinds, CurState);
             (_, #component{pid = Pid,
                            in_binds = InBinds,
                            out_binds = OutBinds,
@@ -257,7 +268,13 @@ do_handle_in(Port, SenderId, Msg, From,
                          {ok, NewState}
                  end
     end.
-    
+
+set_out(#state{if_spec = #een_interface_spec{ext_out = ExtOutSpec,
+                                             int_out = IntOutSpec},
+               ext_out_binds = ExtOutBinds,
+               int_out_binds = IntOutBinds}) ->
+    een_out:set(merge_orddict(ExtOutBinds, IntOutBinds),
+                merge_orddict(ExtOutSpec, IntOutSpec)).
 
 handle_return({ok, NewMst}, State) ->
     {ok, State#state{mst = NewMst}};
@@ -265,3 +282,6 @@ handle_return({reply, Reply, NewMst}, State) ->
     {reply, Reply, State#state{mst = NewMst}};
 handle_return({stop, Reason, NewMst}, State) ->
     {stop, Reason, State#state{mst = NewMst}}.
+
+merge_orddict(Dict1, Dict2) ->
+    orddict:merge(fun (K, _, _) -> throw({merge_conflict, K}) end, Dict1, Dict2).
