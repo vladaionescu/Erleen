@@ -13,6 +13,8 @@ spawn_config(Config) ->
 out(PortName, Msg) ->
     een_out:send(PortName, Msg).
 
+reply(FromList, Msg) when is_list(FromList) ->
+    lists:foreach(fun (From) -> reply(From, Msg) end, FromList);
 reply(From, Msg) ->
     een_gen:reply(From, Msg).
 

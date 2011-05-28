@@ -42,7 +42,7 @@ t1() ->
                                       to   = #een_port{comp_id = a,
                                                        port_name = pong2_a}}]}},
     {ok, Top} = een:spawn_config(Config),
-    een_gen:cast(Top, {msg, ping_in, {}}), %% Fake
+    een_gen:cast(Top, {msg, ping_in, {undefined, undefined}, {}}), %% Fake
     receive pong_out -> ok end.
 
 repeat(Fun, Times) ->

@@ -13,32 +13,47 @@ send(PortName, Msg) ->
     OutFun = get('$een_out_fun'),
     OutFun(PortName, Msg).
 
+%% TODO: make this a single out function (not two) - by merging int and ext bindings (shouldn't be hard)
 set(Bindings, IfSpec, Loc) ->
     een:report("Setting ~p bindings ~p~n", [Loc, Bindings]),
     BindingsDict = orddict:from_list(Bindings),
+    {Key, PortSpecs} =
+        case Loc of
+            int -> {'$een_int_out_fun', IfSpec#een_interface_spec.int_out};
+            ext -> {'$een_ext_out_fun', IfSpec#een_interface_spec.ext_out}
+        end,
     %% TODO: optimize
     OutFun =
         fun (PortName, Msg) ->
-                case orddict:find(PortName, BindingsDict) of
-                    {ok, [{Pid, RemotePortName}]} ->
-                        %io:format("msg ~p from (~p:~p:~p) to (?:~p:~p)~n", [Msg, get('$een_component_id'), self(), PortName, Pid, RemotePortName]),
-                        case port_msg_type(PortName, IfSpec, Loc) of
-                            cast -> een_gen:cast(Pid, {msg, RemotePortName, Msg});
-                            call -> een_gen:async_call(Pid, {msg, RemotePortName, Msg})
+                case orddict:find(PortName, PortSpecs) of
+                    {ok, #een_port_spec{type = Type, msg_type = MsgType}} ->
+                        case orddict:find(PortName, BindingsDict) of
+                            {ok, DestList} ->
+                                SenderId = {get('$een_component_id'), PortName},
+                                Dest = case Type of
+                                           basic -> random_pick(DestList);
+                                           multi -> todo;
+                                           route -> todo
+                                       end,
+                                do_send(PortName, SenderId, MsgType, Dest, Msg)
                         end;
                     error ->
-                        throw({invalid_message, PortName})
+                        throw({invalid_port, PortName})
                 end
         end,
-    Key = case Loc of
-               int -> '$een_int_out_fun';
-               ext -> '$een_ext_out_fun'
-          end,
     put(Key, OutFun),
     join().
 
+do_send(PortName, SenderId, cast, {Pid, RemotePortName}, Msg) ->
+    io:format("msg ~p from (~p:~p:~p) to (?:~p:~p)~n", [Msg, get('$een_component_id'), self(), PortName, Pid, RemotePortName]),
+    een_gen:cast(Pid, {msg, RemotePortName, SenderId, Msg});
+do_send(PortName, SenderId, call, {Pid, RemotePortName}, Msg) ->
+    io:format("msg ~p from (~p:~p:~p) to (?:~p:~p)~n", [Msg, get('$een_component_id'), self(), PortName, Pid, RemotePortName]),
+    een_gen:async_call(Pid, {msg, RemotePortName, SenderId, Msg}).
+    
+
 reset() ->
-    OutFun = fun (PortName, _Msg) -> throw({invalid_message, PortName}) end,
+    OutFun = fun (PortName, _Msg) -> throw({invalid_port, PortName}) end,
     put('$een_ext_out_fun', OutFun),
     put('$een_int_out_fun', OutFun),
     put('$een_out_fun', OutFun),
@@ -52,17 +67,11 @@ join() ->
             try IntOutFun(PortName, Msg) of
                 Ret -> Ret
             catch
-                throw:{invalid_message, PortName} -> ExtOutFun(PortName, Msg)
+                throw:{invalid_port, PortName} -> ExtOutFun(PortName, Msg)
             end
         end,
     put('$een_out_fun', OutFun),
     ok.
 
-port_msg_type(Name, #een_interface_spec{ext_out = OutSpec}, ext) ->
-    port_msg_type2(Name, OutSpec);
-port_msg_type(Name, #een_interface_spec{int_out = OutSpec}, int) ->
-    port_msg_type2(Name, OutSpec).
-
-port_msg_type2(Name, OutSpec) ->
-    #een_port_spec{msg_type = MsgType} = orddict:fetch(Name, OutSpec),
-    MsgType.
+random_pick(List) ->
+    lists:nth(random:uniform(length(List)), List).

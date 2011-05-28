@@ -16,7 +16,12 @@
                 if_spec,
                 spec,
                 map_comps,
-                map_pid_compid}).
+                map_pid_compid,
+                multi_buf = een_multi_buffer:new(),
+                ext_in_binds = orddict:new(),
+                ext_out_binds = orddict:new(),
+                int_in_binds = orddict:new(),
+                int_out_binds = orddict:new()}).
 
 -record(component, {pid,
                     in_binds = orddict:new(),
@@ -79,17 +84,15 @@ reinit(_OldModule, _OldState, [OldMod, OldMst, Mod, Args,
         {error, _} = E -> E
     end.
 
-handle_cast({msg, LocalId, Msg}, State) ->
-    do_handle_in(LocalId, Msg, none, State).
+handle_cast({msg, LocalId, SenderId, Msg}, State) ->
+    do_handle_in(LocalId, SenderId, Msg, none, State).
 
-handle_call({set_ext_bindings, _InBindings, OutBindings}, _From,
-            State = #state{if_spec = IfSpec}) ->
-    een_out:set(OutBindings, IfSpec, ext),
-    {reply, ok, State};
+handle_call({set_ext_bindings, InBindings, OutBindings}, _From, State) ->
+    {reply, ok, set_ext_bindings(InBindings, OutBindings, State)};
 handle_call({set_children_config, Config}, _From, State) ->
     handle_children_config(Config, State);
-handle_call({msg, LocalId, Msg}, From, State) ->
-    do_handle_in(LocalId, Msg, From, State).
+handle_call({msg, LocalId, SenderId, Msg}, From, State) ->
+    do_handle_in(LocalId, SenderId, Msg, From, State).
 
 handle_reply(MsgId, Reply, State = #state{mod = Mod, mst = Mst}) ->
     handle_return(Mod:handle_reply(MsgId, Reply, Mst), State).
@@ -112,6 +115,24 @@ terminate(Reason, #state{mod = Mod, mst = Mst}) ->
 %% Internal
 %% ----------------------------------------------------------------------------
 
+set_ext_bindings(InBindings, OutBindings,
+                 State = #state{if_spec = IfSpec = #een_interface_spec{ext_in = ExtInPorts},
+                                multi_buf = MultiBuf}) ->
+    %% TODO: allow for multi buffered messages not to be lost on changing bindings
+    MultiBuf =
+        orddict:fold(fun (PortName, #een_port_spec{type = multi}, CurMultiBuf) ->
+                             een_multi_buffer:new_buffer(
+                                 PortName,
+                                 length(orddict:fetch(PortName, InBindings)),
+                                 CurMultiBuf);
+                         (_, _, CurMultiBuf) ->
+                             CurMultiBuf
+                     end, MultiBuf, ExtInPorts),
+    een_out:set(OutBindings, IfSpec, ext),
+    State#state{ext_in_binds = InBindings,
+                ext_out_binds = OutBindings,
+                multi_buf = MultiBuf}.
+
 handle_children_config(Config = #een_children_config{children = Children,
                                                      bindings = Bindings},
                        State = #state{spec = Spec}) ->
@@ -119,12 +140,14 @@ handle_children_config(Config = #een_children_config{children = Children,
     Id = Spec#een_component_spec.id,
     %% TODO: check against existing components
     MCs = orddict:store(Id, #component{pid = self(), spec = Spec}, orddict:new()),
-    State1 = lists:foldl(fun register_child/2, State#state{map_comps = MCs,
-                                                           map_pid_compid = orddict:new()},
+    State1 = lists:foldl(fun register_child/2,
+                         State#state{map_comps = MCs,
+                                     map_pid_compid = orddict:new()},
                          Children),
     State2 = lists:foldl(fun spawn_child/2, State1, orddict:fetch_keys(State1#state.map_comps)),
     State3 = lists:foldl(fun register_binding/2, State2, Bindings),
-    send_bindings_and_children_config(State3).
+    State4 = set_int_bindings_and_children_config(State3),
+    {reply, ok, State4}.
 
 register_child({Spec = #een_component_spec{id = Id}, ChildrenConfig},
                State = #state{map_comps = MCs}) ->
@@ -172,39 +195,69 @@ register_binding(#een_binding{from = #een_port{comp_id = Id1,
                Id2, fun (C) -> C#component{in_binds = InBinds1} end, MCs1),
     State#state{map_comps = MCs2}.
 
-send_bindings_and_children_config(State = #state{map_comps = MCs,
-                                                 spec = #een_component_spec{id = SelfId},
-                                                 if_spec = IfSpec}) ->
+set_int_bindings_and_children_config(State = #state{map_comps = MCs,
+                                                    spec = #een_component_spec{id = SelfId},
+                                                    if_spec = IfSpec}) ->
     %% TODO: parallelize
     %% TODO: handle failures
     orddict:fold(
-        fun (_, #component{spec = #een_component_spec{id = Id},
-                           out_binds = OutBinds}, ok)
+        fun (Id, #component{in_binds = InBinds,
+                            out_binds = OutBinds},
+             CurState)
                     when Id =:= SelfId ->
-                ok = een_out:set(OutBinds, IfSpec, int);
+                ok = een_out:set(OutBinds, IfSpec, int),
+                CurState#state{int_in_binds = InBinds,
+                               int_out_binds = OutBinds};
             (_, #component{pid = Pid,
                            in_binds = InBinds,
                            out_binds = OutBinds,
-                           children_config = ChildrenConfig}, ok) ->
+                           children_config = ChildrenConfig}, CurState) ->
                 ok = een_config:set_ext_bindings(Pid, InBinds, OutBinds),
-                ok = een_config:set_children_config(Pid, ChildrenConfig)
-        end, ok, MCs),
-    {reply, ok, State}.
+                ok = een_config:set_children_config(Pid, ChildrenConfig),
+                CurState
+        end, State, MCs).
 
 adjust_interface_spec(Spec = #een_interface_spec{ext_in = ExtIn,
                                                  ext_out = ExtOut,
                                                  int_in = IntIn,
                                                  int_out = IntOut}) ->
-    Spec#een_interface_spec{ext_in = orddict:from_list(lists:map(fun port_spec_to_entry/1, ExtIn)),
-                            ext_out = orddict:from_list(lists:map(fun port_spec_to_entry/1, ExtOut)),
-                            int_in = orddict:from_list(lists:map(fun port_spec_to_entry/1, IntIn)),
-                            int_out = orddict:from_list(lists:map(fun port_spec_to_entry/1, IntOut))}.
+    Spec#een_interface_spec{
+        ext_in = orddict:from_list(lists:map(fun port_spec_to_entry/1, ExtIn)),
+        ext_out = orddict:from_list(lists:map(fun port_spec_to_entry/1, ExtOut)),
+        int_in = orddict:from_list(lists:map(fun port_spec_to_entry/1, IntIn)),
+        int_out = orddict:from_list(lists:map(fun port_spec_to_entry/1, IntOut))}.
 
 port_spec_to_entry(PortSpec = #een_port_spec{name = Name}) ->
     {Name, PortSpec}.
 
-do_handle_in(IfId, Msg, From, State = #state{mod = Mod, mst = Mst}) ->
-    handle_return(Mod:handle_in(IfId, Msg, From, Mst), State).
+do_handle_in(Port, SenderId, Msg, From,
+             State = #state{mod = Mod,
+                            mst = Mst,
+                            if_spec = #een_interface_spec{ext_in = ExtInPorts,
+                                                          int_in = IntInPorts},
+                            multi_buf = MultiBuf}) ->
+    %% TODO: check validity
+    {Type, _Where} =
+        case orddict:find(Port, IntInPorts) of
+            {ok, #een_port_spec{type = T}} ->
+                {T, int};
+            error ->
+                #een_port_spec{type = T} = orddict:fetch(Port, ExtInPorts),
+                {T, ext}
+        end,
+    case Type of
+        basic -> handle_return(Mod:handle_in(Port, Msg, From, Mst), State);
+        multi -> {Outcome, NewMultiBuf} = een_multi_buffer:in(Port, SenderId,
+                                                              Msg, MultiBuf),
+                 NewState = State#state{multi_buf = NewMultiBuf},
+                 case Outcome of
+                     {out, MsgList, FromList} ->
+                         handle_return(Mod:handle_in(Port, MsgList, FromList, Mst), NewState);
+                     noout ->
+                         {ok, NewState}
+                 end
+    end.
+    
 
 handle_return({ok, NewMst}, State) ->
     {ok, State#state{mst = NewMst}};
