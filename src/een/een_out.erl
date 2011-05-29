@@ -26,7 +26,7 @@ set(Bindings, PortSpecs) ->
                         SenderId = {get('$een_compomnent_id'), PortName},
                         Dest = case Type of
                                    basic -> random_pick(DestList);
-                                   multi -> todo;
+                                   multi -> DestList;
                                    route -> todo
                                end,
                         do_send(PortName, SenderId, MsgType, Dest, Msg)
@@ -40,7 +40,18 @@ do_send(PortName, SenderId, MsgType, {Pid, RemotePortName}, Msg) ->
     case MsgType of
         cast -> een_gen:cast(Pid, {msg, RemotePortName, SenderId, Msg});
         call -> {ok, een_gen:async_call(Pid, {msg, RemotePortName, SenderId, Msg})}
-    end.
+    end;
+do_send(PortName, SenderId, MsgType, DestList, Msg) ->
+    SendList =
+        lists:foldl(
+            fun (Dest, Acc) ->
+                    Send = do_send(PortName, SenderId, MsgType, Dest, Msg),
+                    case {MsgType, Send} of
+                        {cast, ok}          -> ok;
+                        {call, {ok, MsgId}} -> [MsgId | Acc]
+                    end
+            end, [], DestList),
+    een_multi_reply_buffer:new_call(SendList).
 
 random_pick(List) ->
     lists:nth(random:uniform(length(List)), List).

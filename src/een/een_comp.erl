@@ -74,6 +74,7 @@ behaviour_info(_) ->
 reinit(_OldModule, _OldState, [OldMod, OldMst, Mod, Args,
                                Spec = #een_component_spec{id = Id}]) ->
     put('$een_component_id', Id),
+    een_multi_reply_buffer:new(),
     case Mod:reinit(OldMod, OldMst, Args) of
         {ok, InterfaceSpec = #een_interface_spec{}, Mst0} ->
             State0 = #state{mod = Mod,
@@ -95,8 +96,8 @@ handle_call({set_children_config, Config}, _From, State) ->
 handle_call({msg, LocalId, SenderId, Msg}, From, State) ->
     do_handle_in(LocalId, SenderId, Msg, From, State).
 
-handle_reply(MsgId, Reply, State = #state{mod = Mod, mst = Mst}) ->
-    handle_return(Mod:handle_reply(MsgId, Reply, Mst), State).
+handle_reply(MsgId, Reply, State) ->
+    do_handle_reply(MsgId, Reply, State).
 
 handle_parent_exit(Reason, State) ->
     NewReason = case Reason of
@@ -267,6 +268,16 @@ do_handle_in(Port, SenderId, Msg, From,
                      noout ->
                          {ok, NewState}
                  end
+    end.
+
+do_handle_reply(MsgId, Reply, State = #state{mod = Mod, mst = Mst}) ->
+    case een_multi_reply_buffer:in(MsgId, Reply) of
+        not_multi ->
+            handle_return(Mod:handle_reply(MsgId, Reply, Mst), State);
+        {out, NewMsgId, Replies} ->
+            handle_return(Mod:handle_reply(NewMsgId, Replies, Mst), State);
+        noout ->
+            {ok, State}
     end.
 
 set_out(#state{if_spec = #een_interface_spec{ext_out = ExtOutSpec,
