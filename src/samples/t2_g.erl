@@ -7,9 +7,10 @@
 
 -export([reinit/3, handle_in/4, handle_reply/3, terminate/2]).
 
--record(state, {sent_pong = false}).
+-record(state, {sent_pong = false,
+                n}).
 
-reinit(_, _, []) ->
+reinit(_, _, [N]) ->
     {ok,
      #een_interface_spec{ext_in = [#een_port_spec{name = ping_g,
                                                   type = multi,
@@ -18,10 +19,11 @@ reinit(_, _, []) ->
                          ext_out = [#een_port_spec{name = pong_g,
                                                    msg_type = cast,
                                                    arrity = 0}]},
-     #state{}}.
+     #state{n = N}}.
 
-handle_in(ping_g, Params, From, State = #state{sent_pong = false}) ->
-    3 = length(Params), %% assertion
+handle_in(ping_g, Params, From, State = #state{sent_pong = false,
+                                               n = N}) ->
+    N = length(Params), %% assertion
     een:reply(From, pong_g),
     een:out(pong_g, {}),
     {stop, normal, State#state{sent_pong = true}}.

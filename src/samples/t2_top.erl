@@ -11,9 +11,10 @@
                 got_pong = false,
                 got_reply = false,
                 phase = 0,
-                caller}).
+                caller,
+                n}).
 
-reinit(_, _, [Caller]) ->
+reinit(_, _, [Caller, N]) ->
     {ok,
      #een_interface_spec{ext_in = [#een_port_spec{name = ping_in,
                                                   msg_type = cast,
@@ -26,7 +27,7 @@ reinit(_, _, [Caller]) ->
                                                   type = multi,
                                                   msg_type = cast,
                                                   arrity = 0}]},
-     #state{caller = Caller}}.
+     #state{caller = Caller, n = N}}.
 
 handle_in(ping_in, {}, _From, State = #state{sent_ping = false}) ->
     {ok, MsgId} = een:out(ping_top, {}),
@@ -34,14 +35,16 @@ handle_in(ping_in, {}, _From, State = #state{sent_ping = false}) ->
                      phase = 1}};
 handle_in(pong_top, Params, _From, State = #state{sent_ping = {true, _},
                                                   got_pong = false,
-                                                  phase = Phase}) ->
-    2 = length(Params), %% assertion
+                                                  phase = Phase,
+                                                  n = N}) ->
+    N = length(Params), %% assertion
     maybe_done(State#state{got_pong = true, phase = Phase + 1}).
 
 handle_reply(MsgId, Replies, State = #state{sent_ping = {true, MsgId},
                                             got_reply = false,
-                                            phase = Phase}) ->
-    2 = length(Replies), %% assertion
+                                            phase = Phase,
+                                            n = N}) ->
+    N = length(Replies), %% assertion
     maybe_done(State#state{got_reply = true, phase = Phase + 1}).
 
 terminate(Reason, #state{phase = 3,

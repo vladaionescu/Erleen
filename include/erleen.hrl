@@ -6,8 +6,6 @@
                              module,
                              args = [],
                              node}).
--record(een_binding, {from, to}).
--record(een_port, {comp_id, port_name}).
 
 -record(een_interface_spec, {ext_in = [],
                              ext_out = [],
