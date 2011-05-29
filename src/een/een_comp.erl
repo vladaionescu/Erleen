@@ -192,13 +192,13 @@ register_binding(#een_binding{from = #een_port{comp_id = Id1,
     %% TODO: check validity
     #component{pid = Pid1, out_binds = OutBinds0} = orddict:fetch(Id1, MCs),
     #component{pid = Pid2, in_binds = InBinds0} = orddict:fetch(Id2, MCs),
-    Entry2 = {Pid2, Port2},
+    Entry2 = {Id2, Pid2, Port2},
     OutBinds1 =
         orddict:update(Port1,
                        fun (PortList) -> [Entry2 | PortList] end, [Entry2],
                        OutBinds0),
     %% TODO: do we need pids in inbinds ?? - perhaps keep symmetric somehow, if not
-    Entry1 = {Pid1, Port1},
+    Entry1 = {Id1, Pid1, Port1},
     InBinds1 =
         orddict:update(Port2,
                        fun (PortList) -> [Entry1 | PortList] end, [Entry1],
@@ -260,7 +260,8 @@ do_handle_in(Port, SenderId, Msg, From,
     case Type of
         basic -> handle_return(Mod:handle_in(Port, Msg, From, Mst), State);
         multi -> {Outcome, NewMultiBuf} = een_multi_buffer:in(Port, SenderId,
-                                                              Msg, MultiBuf),
+                                                              Msg, From,
+                                                              MultiBuf),
                  NewState = State#state{multi_buf = NewMultiBuf},
                  case Outcome of
                      {out, MsgList, FromList} ->

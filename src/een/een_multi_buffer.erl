@@ -30,14 +30,14 @@ in(Port, SenderId, Msg, From, Bufs) ->
             error      -> Buf#buf{store = orddict:store(SenderId, [Entry], Store),
                                   occ = Occ + 1}
         end,
-    {Outcome, NewNewBuf} = maybe_ship_it(NewBuf),
-    {Outcome, orddict:store(Port, NewNewBuf, Bufs)}.
+    {Out, NewNewBuf} = maybe_ship_it(NewBuf),
+    {Out, orddict:store(Port, NewNewBuf, Bufs)}.
     
 maybe_ship_it(Buf = #buf{size = Size, occ = Size, store = Store}) ->
     {NewStore, MsgList, FromList} =
         orddict:fold(
-            fun (SenderId, {Msg, From}, {CurStore, AccMsg, AccFrom}) ->
-                    {orddict:update(SenderId, fun ([_|Rest]) -> Rest end, CurStore),
+            fun (SenderId, [{Msg, From} | Rest], {CurStore, AccMsg, AccFrom}) ->
+                    {orddict:store(SenderId, Rest, CurStore),
                      [Msg | AccMsg], [From | AccFrom]}
             end, {Store, [], []}, Store),
     {{out, MsgList, FromList}, Buf#buf{store = NewStore}};

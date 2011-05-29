@@ -21,11 +21,13 @@ new_call(MsgIds) ->
                                 orddict:store(MsgId, CallId, CurMC)
                         end, MC, MsgIds),
     NewCs = orddict:store(CallId, #call{size = length(MsgIds)}, Cs),
+    een:report("expecting reply ~p made of ~p~n", [CallId, MsgIds]),
     put('$een_multi_reply_buffer', Buf#buf{map_msg_call = NewMC,
                                            map_calls = NewCs}),
     CallId.
 
 in(MsgId, Reply) ->
+    een:report("got reply ~p~n", [MsgId]),
     Buf = #buf{map_msg_call = MC,
                map_calls = Cs} = get('$een_multi_reply_buffer'),
     case orddict:find(MsgId, MC) of
@@ -37,6 +39,7 @@ in(MsgId, Reply) ->
             {Outcome, NewCs} =
                 case NewCall of
                     #call{occ = Size, size = Size, replies = AllReplies} ->
+                        een:report("built reply ~p~n", [CallId]),
                         {{out, CallId, AllReplies}, orddict:erase(CallId, Cs)};
                     _ ->
                         {noout, orddict:store(CallId, NewCall, Cs)}
