@@ -21,10 +21,11 @@ reinit(_, _, []) ->
                                                        arrity = 0}]},
      #state{}}.
 
-handle_in(ping_b, {}, _From, State = #state{got_ping = false}) ->
+handle_in(ping_b, {}, From, State = #state{got_ping = false}) ->
     ok = een:out(pong1_b, {}),
     ok = een:out(pong2_b, {}),
-    {reply, pong_reply, State#state{got_ping = true}}.
+    een:reply(From, pong_reply),
+    {ok, State#state{got_ping = true}}.
 
 handle_reply(_, _, State) ->
     {stop, unexpected_reply, State}.

@@ -29,6 +29,15 @@
                     spec,
                     children_config}).
 
+-define(CONTROL_INTERFACE_SPEC,
+        #een_interface_spec{ext_in  = [#een_port_spec{name = shutdown,
+                                                      msg_type = cast,
+                                                      arrity = 1}],
+                            int_out = [#een_port_spec{name = shutdown,
+                                                      type = multi,
+                                                      msg_type = cast,
+                                                      arrity = 1}]}).
+
 %% ----------------------------------------------------------------------------
 %% Internal interface
 %% ----------------------------------------------------------------------------
@@ -48,8 +57,10 @@ behaviour_info(callback) ->
         %% Key = any()
      
         %% HandleReturn = {ok, NewState} |
-        %%                {reply, Reply, NewState} |
         %%                {stop, Reason, NewState}
+
+        %% HandleChildExitReturn = {restart, NewState} |
+        %%                         {stop, Reason, NewState}
 
         %% (OldModule, OldState, Args) ->
         %%     {ok, InterfaceSpec, State} | {error, Error}
@@ -60,6 +71,10 @@ behaviour_info(callback) ->
 
         %% (MsgId, Reply, State) -> HandleReturn
         {handle_reply, 3},
+
+        %% Optional:
+        %% (CompId, Reason, State) -> HandleChildExitReturn
+        %{handle_child_exit, 3},
 
         %% (Reason, State) -> NewReason
         {terminate, 2}
@@ -80,7 +95,7 @@ reinit(_OldModule, _OldState, [OldMod, OldMst, Mod, Args,
             State0 = #state{mod = Mod,
                             mst = Mst0,
                             spec = Spec,
-                            if_spec = adjust_interface_spec(InterfaceSpec)},
+                            if_spec = build_interface_spec(InterfaceSpec)},
             set_out(State0),
             {ok, State0};
         {error, _} = E -> E
@@ -107,7 +122,6 @@ handle_parent_exit(Reason, State) ->
     {stop, NewReason, State}.
 
 handle_child_exit(_Pid, _Reason, State) ->
-    %% TODO
     {ok, State}.
 
 terminate(Reason, #state{mod = Mod, mst = Mst}) ->
@@ -224,10 +238,10 @@ set_children_int_bindings_and_config(
                 CurState
         end, State, MCs).
 
-adjust_interface_spec(Spec = #een_interface_spec{ext_in = ExtIn,
-                                                 ext_out = ExtOut,
-                                                 int_in = IntIn,
-                                                 int_out = IntOut}) ->
+interface_spec_dict(Spec = #een_interface_spec{ext_in = ExtIn,
+                                               ext_out = ExtOut,
+                                               int_in = IntIn,
+                                               int_out = IntOut}) ->
     Spec#een_interface_spec{
         ext_in = orddict:from_list(lists:map(fun port_spec_to_entry/1, ExtIn)),
         ext_out = orddict:from_list(lists:map(fun port_spec_to_entry/1, ExtOut)),
@@ -236,6 +250,23 @@ adjust_interface_spec(Spec = #een_interface_spec{ext_in = ExtIn,
 
 port_spec_to_entry(PortSpec = #een_port_spec{name = Name}) ->
     {Name, PortSpec}.
+
+build_interface_spec(Spec = #een_interface_spec{}) ->
+    merge_interface_specs(interface_spec_dict(Spec),
+                          interface_spec_dict(?CONTROL_INTERFACE_SPEC)).
+
+merge_interface_specs(Spec1 = #een_interface_spec{ext_in  = ExtIn1,
+                                                  ext_out = ExtOut1,
+                                                  int_in  = IntIn1,
+                                                  int_out = IntOut1},
+                              #een_interface_spec{ext_in  = ExtIn2,
+                                                  ext_out = ExtOut2,
+                                                  int_in  = IntIn2,
+                                                  int_out = IntOut2}) ->
+    Spec1#een_interface_spec{ext_in  = merge_orddict(ExtIn1, ExtIn2),
+                             ext_out = merge_orddict(ExtOut1, ExtOut2),
+                             int_in  = merge_orddict(IntIn1, IntIn2),
+                             int_out = merge_orddict(IntOut1, IntOut2)}.
 
 do_handle_in(Port, SenderId, Msg, From,
              State = #state{mod = Mod,
@@ -285,8 +316,6 @@ set_out(#state{if_spec = #een_interface_spec{ext_out = ExtOutSpec,
 
 handle_return({ok, NewMst}, State) ->
     {ok, State#state{mst = NewMst}};
-handle_return({reply, Reply, NewMst}, State) ->
-    {reply, Reply, State#state{mst = NewMst}};
 handle_return({stop, Reason, NewMst}, State) ->
     {stop, Reason, State#state{mst = NewMst}}.
 
