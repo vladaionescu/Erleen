@@ -3,10 +3,12 @@
 
 -behaviour(een_gen).
 
--export([behaviour_info/1]).
--export([start/4]).
--export([reinit/3, handle_cast/2, handle_call/3, handle_reply/3, terminate/2,
-         handle_child_exit/3, handle_parent_exit/2]).
+%-export([behaviour_info/1]).
+%-export([start/4]).
+%-export([reinit/3, handle_cast/2, handle_call/3, handle_reply/3, terminate/2,
+%         handle_child_exit/3, handle_parent_exit/2]).
+
+-compile(export_all).
 
 -include_lib("erleen.hrl").
 
@@ -53,7 +55,8 @@ behaviour_info(callback) ->
         %%                {stop, Reason, NewState}
 
         %% HandleChildExitReturn = {restart, NewState} |
-        %%                         {stop, Reason, NewState}
+        %%                         {stop, Reason, NewState} |
+        %%                         {ok, NewState}
 
         %% (OldModule, OldState, Args) ->
         %%     {ok, InterfaceSpec, State} | {error, Error}
@@ -65,8 +68,8 @@ behaviour_info(callback) ->
         %% (MsgId, Reply, State) -> HandleReturn
         {handle_reply, 3},
 
-        %% Optional:
         %% (CompId, Reason, State) -> HandleChildExitReturn
+        %% Optional
         %{handle_child_exit, 3},
 
         %% (Reason, State) -> NewReason
@@ -86,9 +89,9 @@ reinit(_OldModule, _OldState, [OldMod, OldMst, Mod, Args,
     case Mod:reinit(OldMod, OldMst, Args) of
         {ok, InterfaceSpec = #een_interface_spec{}, Mst0} ->
             State0 = #een_state{mod = Mod,
-                               mst = Mst0,
-                               spec = Spec,
-                               if_spec = build_interface_spec(InterfaceSpec)},
+                                mst = Mst0,
+                                spec = Spec,
+                                if_spec = build_interface_spec(InterfaceSpec)},
             put_s(State0),
             set_out(),
             {ok, nostate};
@@ -117,8 +120,41 @@ handle_parent_exit(Reason, nostate) ->
                 end,
     {stop, NewReason, nostate}.
 
-handle_child_exit(_Pid, _Reason, nostate) ->
-    {ok, nostate}.
+handle_child_exit(Pid, Reason, nostate) ->
+    State = #een_state{map_pid_compid = MPC,
+                       mod = Mod,
+                       mst = Mst,
+                       is_spawn = IsSpawn} = get_s(),
+    ChildId = orddict:fetch(Pid, MPC),
+    NewMPC = orddict:erase(Pid, MPC),
+    put_s(State#een_state{map_pid_compid = NewMPC}),
+    case {erlang:function_exported(Mod, handle_child_exit, 3),
+          catch Mod:handle_child_exit(ChildId, Reason, Mst),
+          IsSpawn} of
+        {false, _, false} ->
+            {stop, {child_exit, ChildId, Reason}, nostate};
+        {false, _, true} ->
+            case erase_spawn_child(ChildId) of
+                ok    -> {ok, nostate};
+                Error -> {stop, Error, nostate}
+            end;
+        {true, {stop, Reason, NewMst}, _} ->
+            State1 = get_s(),
+            put_s(State1#een_state{mst = NewMst}),
+            {stop, Reason, nostate};
+        {true, {restart, NewMst}, _} ->
+            State1 = get_s(),
+            put_s(State1#een_state{mst = NewMst}),
+            respawn_child(ChildId, Mod, NewMst),
+            {ok, nostate};
+        {true, {ok, NewMst}, true} ->
+            State1 = get_s(),
+            put_s(State1#een_state{mst = NewMst}),
+            case erase_spawn_child(ChildId) of
+                ok    -> {ok, nostate};
+                Error -> {stop, Error, nostate}
+            end
+    end.
 
 terminate(Reason, nostate) ->
     #een_state{mod = Mod, mst = Mst} = get_s(),
@@ -176,7 +212,8 @@ set_children_config(Config = #een_children_config{is_spawn = true,
                                                   children = [{ChildSpec, ChildChildrenConfig}],
                                                   spawn_min = SpawnMin,
                                                   spawn_max = SpawnMax,
-                                                  spawn_init = SpawnInit}) ->
+                                                  spawn_init = SpawnInit,
+                                                  spawn_binding = SpawnBinding}) ->
     een:report("Setting spawn child config ~p~n", [Config]),
     State = #een_state{spec = Spec = #een_component_spec{id = Id}} = get_s(),
     %% TODO: check against existing components
@@ -185,11 +222,13 @@ set_children_config(Config = #een_children_config{is_spawn = true,
                                                                children_config = ChildChildrenConfig},
                              spawn_min = SpawnMin,
                              spawn_max = SpawnMax,
+                             spawn_binding = SpawnBinding,
                              map_comps = MCs,
                              map_pid_compid = orddict:new(),
-                             config = Config},
+                             config = Config,
+                             is_spawn = true},
     put_s(State1),
-    lists:foreach(fun (_) -> ok = spawn_spawn_child() end,
+    lists:foreach(fun (_) -> {ok, _, _} = spawn_spawn_child() end,
                   lists:seq(1, SpawnInit)).
 
 spawn_spawn_child() ->
@@ -207,12 +246,28 @@ spawn_spawn_child() ->
             ThisId = list_to_atom(atom_to_list(Id) ++ "_" ++ integer_to_list(SpawnIndex)),
             ThisChildrenConfig = replace_id_in_children_config(ThisId, Id, ChildrenConfig),
             State1 = register_child({Spec#een_component_spec{id = ThisId}, ThisChildrenConfig}, State),
-            spawn_child(ThisId),
+            put_s(State1),
+            {ok, Pid} = spawn_child(ThisId),
             ThisBindings = replace_id_in_bindings(ThisId, Id, Bindings),
-            State2 = lists:foldl(fun register_binding/2, State1, ThisBindings),
+            State2 = lists:foldl(fun register_binding/2, get_s(), ThisBindings),
             put_s(State2#een_state{spawn_index = SpawnIndex + 1,
                                    spawn_current = SpawnCurrent + 1}),
             set_children_int_bindings_and_config(),
+            {ok, ThisId, Pid}
+    end.
+
+erase_spawn_child(ChildId) ->
+    een:report("Erasing spawn child ~p because it died", [ChildId]),
+    State = #een_state{map_comps = MCs,
+                        spawn_min = SpawnMin,
+                        spawn_current = SpawnCurrent} = get_s(),
+    NewMCs = orddict:erase(ChildId, MCs),
+    put_s(State#een_state{map_comps = NewMCs,
+                          spawn_current = SpawnCurrent - 1}),
+    if
+        SpawnCurrent =< SpawnMin ->
+            {too_few_children, SpawnCurrent - 1};
+        true ->
             ok
     end.
 
@@ -229,7 +284,9 @@ replace_id_in_bindings(NewId, OldId, Bindings) ->
               Bindings).
 
 replace_id_in_binding(NewId, OldId, {From, To}) ->
-    {replace_id_in_port(NewId, OldId, From), replace_id_in_port(NewId, OldId, To)}.
+    {replace_id_in_port(NewId, OldId, From), replace_id_in_port(NewId, OldId, To)};
+replace_id_in_binding(_, _, undefined) ->
+    undefined.
 
 replace_id_in_port(NewId, OldId, {OldId, PortName}) ->
     {NewId, PortName};
@@ -252,7 +309,7 @@ respawn_child(Id, OldModule, OldState) ->
                    spec = #een_component_spec{id = OwnId}} = get_s(),
     case Id of
         OwnId ->
-            ok;
+            {ok, self()};
         _ ->
             %% TODO: handle failures
             Component = #een_component{pid = OldPid, spec = Spec} = orddict:fetch(Id, MCs),
@@ -261,7 +318,7 @@ respawn_child(Id, OldModule, OldState) ->
             MPC1 = orddict:erase(OldPid, MPC),
             MPC2 = orddict:store(NewPid, Id, MPC1),
             put_s(State#een_state{map_comps = NewMCs, map_pid_compid = MPC2}),
-            ok
+            {ok, NewPid}
     end.
 
 register_binding({{Id1, Port1}, {Id2, Port2}}, State = #een_state{map_comps = MCs}) ->

@@ -13,6 +13,9 @@ t1_test_() ->
 t2_test_() ->
     {timeout, 60, repeat(fun t2/0, 100)}.
 
+t3_test_() ->
+    {timeout, 60, repeat(fun t3/0, 100)}.
+
 t1() ->
     Config =
         {#een_component_spec{id = top,
@@ -273,6 +276,39 @@ t2() ->
                          {{f36, ping_f}, {g3, ping_g}},
                          {{f37, ping_f}, {g3, ping_g}},
                          {{g3, pong_g}, {top, pong_top}}]}},
+    {ok, Top} = een:spawn_config(Config),
+    een_gen:cast(Top, {msg, ping_in, {undefined, undefined}, {}}), %% Fake
+    receive pong_out -> ok end.
+
+t3() ->
+    Config =
+        {#een_component_spec{id = top,
+                             module = t3_top,
+                             args = [self()],
+                             node = make_node(w1)},
+         #een_children_config{
+             children = [{#een_component_spec{id = spawn,
+                                              module = t3_spawn,
+                                              node = make_node(w2)},
+                          #een_children_config{
+                              is_spawn = true,
+                              children = [{#een_component_spec{id = child,
+                                                               module = t3_child,
+                                                               node = make_node(w3)},
+                                           #een_children_config{}}],
+                              bindings = [{{spawn, spawn}, {child, spawn}},
+                                          {{spawn, ping_call}, {child, ping_call_child}},
+                                          {{spawn, ping_call_single}, {child, ping_call_single_child}},
+                                          {{spawn, ping_cast}, {child, ping_cast_child}},
+                                          {{spawn, ping_cast_single}, {child, ping_cast_single_child}},
+                                          {{child, pong_cast_child}, {spawn, pong_cast}},
+                                          {{child, pong_cast_single_child}, {spawn, pong_cast_single}}],
+                              spawn_binding = {{spawn, spawn}, {child, spawn}},
+                              spawn_min = 2,
+                              spawn_max = 5,
+                              spawn_init = 3}}],
+             bindings = [{{top, ping_top}, {spawn, ping_spawn}},
+                         {{top, spawn}, {spawn, spawn}}]}},
     {ok, Top} = een:spawn_config(Config),
     een_gen:cast(Top, {msg, ping_in, {undefined, undefined}, {}}), %% Fake
     receive pong_out -> ok end.

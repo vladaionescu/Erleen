@@ -28,7 +28,7 @@ handle_in(ping_b, {}, From, State = #state{sent_ping = false}) ->
     {ok, State#state{sent_ping = {true, From}}};
 handle_in(pong_b, {}, _OtherFrom, State = #state{sent_ping = {true, From}}) ->
     een:reply(From, pong_b),
-    {stop, normal, State#state{got_pong = true}}.
+    {ok, State#state{got_pong = true}}.
 
 handle_reply(_, _, _) ->
     unexpected.

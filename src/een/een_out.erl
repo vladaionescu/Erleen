@@ -11,25 +11,46 @@ send(PortName, Msg) ->
 
 set(Bindings, PortSpecs) ->
     een:report("Setting bindings ~p~n", [Bindings]),
+    {SpawnPort, DestSpawnPort} =
+        case een_comp:get_s() of
+            #een_state{is_spawn = true,
+                       spawn_binding = {{_, SP}, {_, DestSP}}} ->
+                {SP, DestSP};
+            #een_state{is_spawn = false} ->
+                {undefined, undefined}
+        end,
     OutFun =
         fun (PortName, Msg) ->
-                case {orddict:find(PortName, PortSpecs),
-                      orddict:find(PortName, Bindings)} of
-                    {error, _} ->
-                        throw({invalid_port, PortName});
-                    {{ok, #een_port_spec{msg_type = cast}}, error} ->
-                        ok;
-                    {{ok, #een_port_spec{msg_type = call}}, error} ->
-                        nobinds;
-                    {{ok, #een_port_spec{type = Type, msg_type = MsgType}},
-                     {ok, DestList}} ->
-                        SenderId = {get('$een_component_id'), PortName},
-                        Dest = case Type of
-                                   basic -> random_pick(DestList);
-                                   multi -> DestList;
-                                   route -> todo
-                               end,
-                        do_send(PortName, SenderId, MsgType, Dest, Msg)
+                case PortName of
+                    SpawnPort ->
+                        {ok, DestCompId, DestPid} = een_comp:spawn_spawn_child(),
+                        case orddict:find(PortName, PortSpecs) of
+                            error ->
+                                throw({invalid_port, PortName});
+                            {ok, #een_port_spec{type = basic, msg_type = MsgType}} ->
+                                SenderId = {get('$een_component_id'), PortName},
+                                Dest = {DestCompId, DestPid, DestSpawnPort},
+                                do_send(PortName, SenderId, MsgType, Dest, Msg)
+                        end;
+                    _ ->
+                        case {orddict:find(PortName, PortSpecs),
+                              orddict:find(PortName, Bindings)} of
+                            {error, _} ->
+                                throw({invalid_port, PortName});
+                            {{ok, #een_port_spec{msg_type = cast}}, error} ->
+                                ok;
+                            {{ok, #een_port_spec{msg_type = call}}, error} ->
+                                nobinds;
+                            {{ok, #een_port_spec{type = Type, msg_type = MsgType}},
+                             {ok, DestList}} ->
+                                SenderId = {get('$een_component_id'), PortName},
+                                Dest = case Type of
+                                           basic -> random_pick(DestList);
+                                           multi -> DestList;
+                                           route -> todo
+                                       end,
+                                do_send(PortName, SenderId, MsgType, Dest, Msg)
+                        end
                 end
         end,
     put('$een_out_fun', OutFun),

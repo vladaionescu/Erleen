@@ -26,7 +26,7 @@ handle_in(ping_g, Params, From, State = #state{sent_pong = false,
     N = length(Params), %% assertion
     een:reply(From, pong_g),
     een:out(pong_g, {}),
-    {stop, normal, State#state{sent_pong = true}}.
+    {ok, State#state{sent_pong = true}}.
 
 handle_reply(_, _, _) ->
     unexpected.

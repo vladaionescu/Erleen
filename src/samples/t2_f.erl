@@ -30,7 +30,7 @@ handle_in(ping_f, {}, _From, State = #state{sent_ping = false}) ->
 handle_reply(MsgId, {reply, pong_g}, State = #state{sent_ping = {true, MsgId},
                                            got_reply = false}) ->
     een:out(pong_f, {}),
-    {stop, normal, State#state{got_reply = true}}.
+    {ok, State#state{got_reply = true}}.
 
 terminate(Reason, #state{sent_ping = {true, _},
                          got_reply = true}) ->

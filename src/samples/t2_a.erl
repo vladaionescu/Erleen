@@ -31,7 +31,7 @@ handle_reply(MsgId, Replies, State = #state{sent_ping = {true, MsgId, From},
                                             n = N}) ->
     N = length(Replies), %% assertion
     een:reply(From, pong_a),
-    {stop, normal, State#state{got_reply = true}}.
+    {ok, State#state{got_reply = true}}.
 
 terminate(Reason, #state{sent_ping = {true, _, _},
                          got_reply = true}) ->
