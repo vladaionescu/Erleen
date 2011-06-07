@@ -220,8 +220,6 @@ reconfig(NewSpec = #een_component_spec{id = Id,
 reconfig_children(Config = #een_children_config{is_spawn = IsSpawn,
                                                 children = Children,
                                                 version = Version,
-                                                spawn_min = SpawnMin,
-                                                spawn_max = SpawnMax,
                                                 spawn_init = SpawnInit,
                                                 spawn_binding = SpawnBinding}) ->
     State = #een_state{spec = Spec = #een_component_spec{id = Id},
@@ -239,15 +237,8 @@ reconfig_children(Config = #een_children_config{is_spawn = IsSpawn,
             MCs2 = lists:foldl(fun register_child/2, MCs1, Children),
             put_s(State1#een_state{is_spawn = false, map_comps = MCs2});
         true ->
-            [{ChildSpec, ChildChildrenConfig}] = Children,
             put_s(State1#een_state{is_spawn = true,
-                                   spawn_min = SpawnMin,
-                                   spawn_max = SpawnMax,
-                                   spawn_binding = SpawnBinding,
-                                   spawn_child_comp =
-                                       #een_component{
-                                           spec = ChildSpec,
-                                           children_config = ChildChildrenConfig}}),
+                                   spawn_binding = SpawnBinding}),
             case Version of
                 new      -> [{ok, _} = register_new_spawn_child() ||
                                 _ <- lists:seq(1, SpawnInit)];
@@ -326,11 +317,12 @@ register_child({Spec = #een_component_spec{id = Id,
     end.
 
 register_new_spawn_child() ->
-    State = #een_state{spawn_child_comp =
-                           #een_component{spec = Spec = #een_component_spec{id = Id},
-                                          children_config = ChildrenConfig},
+    State = #een_state{config = #een_children_config{
+                                    children =
+                                        [{Spec = #een_component_spec{id = Id},
+                                          ChildrenConfig}],
+                                    spawn_max = SpawnMax},
                        spawn_index = SpawnIndex,
-                       spawn_max = SpawnMax,
                        spawn_current = SpawnCurrent,
                        map_comps = MCs} = get_s(),
     if
@@ -384,7 +376,7 @@ spawn_child_bindings(ThisId) ->
 erase_spawn_child(ChildId) ->
     een:report("Erasing spawn child ~p because it died~n", [ChildId]),
     State = #een_state{map_comps = MCs,
-                       spawn_min = SpawnMin,
+                       config = #een_children_config{spawn_min = SpawnMin},
                        spawn_current = SpawnCurrent} = get_s(),
     NewMCs = orddict:erase(ChildId, MCs),
     put_s(State#een_state{map_comps = NewMCs,
