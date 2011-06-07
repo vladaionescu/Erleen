@@ -4,7 +4,7 @@
                              module,
                              args = [],
                              node,
-                             version = new %% new | changed | unchanged
+                             version = new %% new | changed | removed | unchanged
                             }).
 -record(een_children_config, {children = [],
                               bindings = [],

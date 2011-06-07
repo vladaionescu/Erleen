@@ -92,6 +92,10 @@ handle_cast({msg, LocalId, SenderId, Msg}, nostate) ->
 handle_call({set_ext_bindings, InBindings, OutBindings}, _From, nostate) ->
     set_ext_bindings(InBindings, OutBindings),
     {reply, ok, nostate};
+handle_call({reconfig, #een_component_spec{version = removed}, _}, From, nostate) ->
+    %% TODO: shutdown / kill all children before this
+    een_gen:reply(From, ok),
+    {stop, removed, nostate};
 handle_call({reconfig, Spec, ChildrenConfig}, _From, nostate) ->
     ok = reconfig(Spec, ChildrenConfig),
     {reply, ok, nostate};
@@ -108,6 +112,15 @@ handle_parent_exit(Reason, nostate) ->
                 end,
     {stop, NewReason, nostate}.
 
+handle_child_exit(Pid, removed, nostate) ->
+    State = #een_state{map_comps = MCs, map_pid_compid = MPC} = get_s(),
+    Id = orddict:fetch(Pid, MPC),
+    NewMPC = orddict:erase(Pid, MPC),
+    NewMCs = orddict:erase(Id, MCs),
+    put_s(State#een_state{map_comps = NewMCs, map_pid_compid = NewMPC}),
+    {ok, nostate};
+handle_child_exit(_Pid, {shutdown, _}, nostate) ->
+    todo;
 handle_child_exit(Pid, Reason, nostate) ->
     State = #een_state{map_pid_compid = MPC,
                        mod = Mod,
@@ -123,7 +136,8 @@ handle_child_exit(Pid, Reason, nostate) ->
             {stop, {child_exit, ChildId, Reason}, nostate};
         {false, _, true} ->
             een:report("spawn child death: (~p:~p) -> ~p~n", [ChildId, Pid, Reason]),
-            ok = erase_spawn_child(ChildId);
+            ok = erase_spawn_child(ChildId),
+            {ok, nostate};
         {true, {stop, Reason, NewMst}, _} ->
             State1 = get_s(),
             put_s(State1#een_state{mst = NewMst}),
@@ -137,7 +151,8 @@ handle_child_exit(Pid, Reason, nostate) ->
         {true, {ok, NewMst}, true} ->
             State1 = get_s(),
             put_s(State1#een_state{mst = NewMst}),
-            ok = erase_spawn_child(ChildId)
+            ok = erase_spawn_child(ChildId),
+            {ok, nostate}
     end.
 
 terminate(Reason, nostate) ->
