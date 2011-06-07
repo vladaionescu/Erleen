@@ -3,14 +3,18 @@
                              type, %% ?
                              module,
                              args = [],
-                             node}).
+                             node,
+                             version = new %% new | changed | unchanged
+                            }).
 -record(een_children_config, {children = [],
                               bindings = [],
                               is_spawn = false,
                               spawn_binding,
                               spawn_min = 0,
                               spawn_max = 1,
-                              spawn_init = 0}).
+                              spawn_init = 0,
+                              version = new %% new | changed | unchanged
+                             }).
 
 -record(een_interface_spec, {ext_in = [],
                              ext_out = [],
@@ -27,8 +31,8 @@
 
 -record(een_state, {id = een_comp,
                     config,
-                    mod,
-                    mst,
+                    mod = none,
+                    mst = none,
                     if_spec,
                     spec,
                     is_spawn = false,
@@ -38,13 +42,13 @@
                     spawn_child_comp,
                     spawn_index = 1,
                     spawn_current = 0,
-                    map_comps,
+                    map_comps = orddict:new(),
                     map_pid_compid,
                     multi_buf = een_multi_buffer:new(),
-                    ext_in_binds = orddict:new(),
-                    ext_out_binds = orddict:new(),
-                    int_in_binds = orddict:new(),
-                    int_out_binds = orddict:new()}).
+                    ext_in_binds,
+                    ext_out_binds,
+                    int_in_binds,
+                    int_out_binds}).
 
 -record(een_component, {pid,
                         in_binds = orddict:new(),

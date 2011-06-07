@@ -23,7 +23,8 @@ set(Bindings, PortSpecs) ->
         fun (PortName, Msg) ->
                 case PortName of
                     SpawnPort ->
-                        {ok, DestCompId, DestPid} = een_comp:spawn_spawn_child(),
+                        {ok, DestCompId, DestPid} =
+                            een_comp:spawn_new_spawn_child(),
                         case orddict:find(PortName, PortSpecs) of
                             error ->
                                 throw({invalid_port, PortName});
