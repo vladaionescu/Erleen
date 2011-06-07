@@ -1,7 +1,7 @@
 
 -module(een).
 
--export([spawn_config/1, out/2, reply/2, report/2]).
+-export([spawn_config/1, reconfig/2, out/2, reply/2, report/2]).
 
 %% ----------------------------------------------------------------------------
 %% Interface
@@ -9,6 +9,10 @@
 
 spawn_config(Config) ->
     een_config:spawn(Config).
+
+reconfig(Pid, {Spec, ChildrenConfig}) ->
+    io:format("Reconfiguring...~n"),
+    een_config:reconfig(Pid, Spec, ChildrenConfig).
 
 out(PortName, Msg) ->
     een_out:send(PortName, Msg).

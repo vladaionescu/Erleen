@@ -189,7 +189,10 @@ reset_multi_buf(InBinds, InSpec) ->
         orddict:fold(fun (PortName, #een_port_spec{type = multi}, CurMultiBuf) ->
                              een_multi_buffer:new_buffer(
                                  PortName,
-                                 length(orddict:fetch(PortName, InBinds)),
+                                 case orddict:find(PortName, InBinds) of
+                                     {ok, Found} -> length(Found);
+                                     error       -> 0
+                                 end,
                                  CurMultiBuf);
                          (_, _, CurMultiBuf) ->
                              CurMultiBuf
@@ -242,7 +245,11 @@ reconfig_children(Config = #een_children_config{is_spawn = IsSpawn,
     MCs1 =
         orddict:update(
             Id,
-            fun (SelfComponent) -> SelfComponent#een_component{spec = Spec} end,
+            fun (SelfComponent) ->
+                    SelfComponent#een_component{spec = Spec,
+                                                in_binds = orddict:new(),
+                                                out_binds = orddict:new()}
+            end,
             #een_component{spec = Spec, pid = self()}, MCs),
     State1 = State#een_state{map_comps = MCs1,
                              config = Config,
@@ -298,14 +305,32 @@ register_child({Spec = #een_component_spec{id = Id,
             orddict:store(Id, #een_component{spec = Spec,
                                              children_config = ChildrenConfig},
                           MCs);
+        {removed, _} ->
+            orddict:update(
+                Id,
+                fun (#een_component{pid = Pid}) ->
+                        #een_component{
+                            spec = #een_component_spec{id = Id,
+                                                       version = removed},
+                            pid = Pid}
+                end,
+                MCs);
         {unchanged, unchanged} ->
-            MCs;
+            orddict:update(
+                Id,
+                fun (Component) ->
+                        Component#een_component{in_binds = orddict:new(),
+                                                out_binds = orddict:new()}
+                end,
+                MCs);
         {changed, unchanged} ->
             orddict:update(
                 Id,
                 fun (Component) ->
                         Component#een_component{
-                            spec = Spec#een_component_spec{version = new}}
+                            spec = Spec#een_component_spec{version = new},
+                            in_binds = orddict:new(),
+                            out_binds = orddict:new()}
                 end,
                 MCs);
         {unchanged, changed} ->
@@ -315,7 +340,9 @@ register_child({Spec = #een_component_spec{id = Id,
                         Component#een_component{
                             children_config =
                                 ChildrenConfig#een_children_config{
-                                    version = new}}
+                                    version = new},
+                            in_binds = orddict:new(),
+                            out_binds = orddict:new()}
                 end,
                 MCs);
         {changed, changed} ->
@@ -326,7 +353,9 @@ register_child({Spec = #een_component_spec{id = Id,
                             spec = Spec#een_component_spec{version = new},
                             children_config =
                                 ChildrenConfig#een_children_config{
-                                    version = new}}
+                                    version = new},
+                            in_binds = orddict:new(),
+                            out_binds = orddict:new()}
                 end,
                 MCs)
     end.
@@ -488,6 +517,9 @@ set_all_int_bindings() ->
                     when Id =:= SelfId ->
                 set_int_bindings(InBinds, OutBinds),
                 ok;
+            (_, #een_component{spec = #een_component_spec{version = removed}},
+                    ok) ->
+                ok;
             (_, #een_component{pid = Pid,
                                in_binds = InBinds,
                                out_binds = OutBinds}, _) ->
@@ -505,6 +537,9 @@ drop_all_int_bindings() ->
     orddict:fold(
         fun (Id, _, ok) when Id =:= SelfId ->
                 set_int_bindings(orddict:new(), orddict:new()),
+                ok;
+            (_, #een_component{spec = #een_component_spec{version = removed}},
+                    ok) ->
                 ok;
             (_, #een_component{pid = Pid}, _) ->
                 ok = een_config:set_ext_bindings(Pid, orddict:new(), orddict:new()),
