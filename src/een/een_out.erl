@@ -58,7 +58,7 @@ set(Bindings, PortSpecs) ->
     ok.
 
 do_send(PortName, SenderId, MsgType, {CompId, Pid, RemotePortName}, Msg) ->
-    io:format("msg ~p from (~p:~p:~p) to (~p:~p:~p)~n", [Msg, get('$een_component_id'), self(), PortName, CompId, Pid, RemotePortName]),
+    %io:format("msg ~p from (~p:~p:~p) to (~p:~p:~p)~n", [Msg, get('$een_component_id'), self(), PortName, CompId, Pid, RemotePortName]),
     case MsgType of
         cast -> een_gen:cast(Pid, {msg, RemotePortName, SenderId, Msg});
         call -> {ok, een_gen:async_call(Pid, {msg, RemotePortName, SenderId, Msg})}

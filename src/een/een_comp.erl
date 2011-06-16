@@ -21,6 +21,7 @@
                                                       msg_type = cast,
                                                       arrity = 1}]}).
 
+%% TODO move to general control interface spec
 -define(SPAWN_CONTROL_INTERFACE_SPEC,
         #een_interface_spec{int_out = [#een_port_spec{name = kill,
                                                       type = route,
