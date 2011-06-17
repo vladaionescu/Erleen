@@ -1,0 +1,56 @@
+
+config() ->
+    %% Definition of the top-level component and its children
+    {%% Top level component itself
+     #een_component_spec{id = top,
+                         module = twt_top,
+                         node = 'tweet@vector13'},
+     %% Configuration of top-level component's children
+     #een_children_config{
+         %% Top-level component's children and their own internal configuration
+         children = [%% Definition of the UI component
+                     {#een_component_spec{id = ui,
+                                          module = twt_ui,
+                                          args = ["vector13.doc.ic.ac.uk"],
+                                          node = 'tweet@vector13'},
+                      #een_children_config{}},
+                     %% Definition of the twitter backend component
+                     {#een_component_spec{id = twtr,
+                                          module = twt_base,
+                                          node = 'tweet@vector13'},
+                      %% Definition of twitter backend's children and their
+                      %% configuration
+                      #een_children_config{
+                          children =
+                              [{#een_component_spec{id = store,
+                                                    module = twt_store,
+                                                    node = 'tweet@vector14'},
+                                #een_children_config{}},
+                               {#een_component_spec{id = users,
+                                                    module = twt_users,
+                                                    node = 'tweet@vector14'},
+                                #een_children_config{}},
+                               {#een_component_spec{id = call_split,
+                                                    module = call_splitter,
+                                                    args = [2],
+                                                    node = 'tweet@vector13'},
+                                #een_children_config{}},
+                               {#een_component_spec{id = stats,
+                                                    module = twt_stats,
+                                                    node = 'tweet@vector13'},
+                                #een_children_config{}}],
+                          bindings =
+                              [{{twtr, new_user}, {users, new_user}},
+                               {{twtr, follow}, {users, follow}},
+                               {{twtr, get_followed_tweets},
+                                {store, get_followed_tweets}},
+                               {{twtr, tweet}, {call_split, in_call}},
+                               {{call_split, out_call}, {store, tweet}},
+                               {{call_split, out_cast}, {stats, tweet}}]}}],
+         %% Bindings between top-level component's children
+         bindings = [{{ui, new_user}, {twtr, new_user}},
+                     {{ui, follow}, {twtr, follow}},
+                     {{ui, get_followed_tweets}, {twtr, get_followed_tweets}},
+                     {{ui, tweet}, {twtr, tweet}}]}}.
+
+
