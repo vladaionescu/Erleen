@@ -8,8 +8,8 @@
                             }).
 -record(een_children_config, {children = [],
                               bindings = [],
+                              routes = [],
                               is_spawn = false,
-                              spawn_binding,
                               spawn_min = 0,
                               spawn_max = 1,
                               spawn_init = 0,
@@ -21,7 +21,7 @@
                              int_in = [],
                              int_out = []}).
 -record(een_port_spec, {name,
-                        type = basic, %% basic | multi | route
+                        type = basic, %% basic | multi
                         msg_type,     %% cast | call
                         arrity}).
 

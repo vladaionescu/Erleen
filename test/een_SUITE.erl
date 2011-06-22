@@ -19,6 +19,9 @@ t3_test_() ->
 t4_test_() ->
     {timeout, 60, repeat(fun t4/0, 100)}.
 
+t5_test_() ->
+    {timeout, 60, repeat(fun t5/0, 100)}.
+
 t1() ->
     Config =
         {#een_component_spec{id = top,
@@ -299,14 +302,13 @@ t3() ->
                                                                module = t3_child,
                                                                node = make_node(w3)},
                                            #een_children_config{}}],
-                              bindings = [{{spawn, spawn}, {child, spawn}},
+                              bindings = [{{spawn, spawn}, {child, spawn}, spawn},
                                           {{spawn, ping_call}, {child, ping_call_child}},
                                           {{spawn, ping_call_single}, {child, ping_call_single_child}},
                                           {{spawn, ping_cast}, {child, ping_cast_child}},
                                           {{spawn, ping_cast_single}, {child, ping_cast_single_child}},
                                           {{child, pong_cast_child}, {spawn, pong_cast}},
                                           {{child, pong_cast_single_child}, {spawn, pong_cast_single}}],
-                              spawn_binding = {{spawn, spawn}, {child, spawn}},
                               spawn_min = 2,
                               spawn_max = 5,
                               spawn_init = 3}}],
@@ -437,6 +439,108 @@ t4() ->
     ok = een:reconfig(Top, Config2),
     een_gen:cast(Top, {msg, ping_in, {undefined, undefined}, {}}), %% Fake
     receive pong_out -> ok end.
+
+t5() ->
+    Config =
+        {#een_component_spec{id = top,
+                             module = t5_top,
+                             args = [self()],
+                             node = make_node(w1)},
+         #een_children_config{
+             children = [{#een_component_spec{id = sender,
+                                              module = t5_sender,
+                                              args = [fun t5_phase_msg/1,
+                                                      fun t5_check_reply/2,
+                                                      10,
+                                                      basic],
+                                              node = make_node(w2)},
+                          #een_children_config{routes = orddict:from_list([{a, fun t5_route/2}])}},
+                         {#een_component_spec{id = recv_a,
+                                              module = t5_receiver,
+                                              args = [fun t5_reply_a/1],
+                                              node = make_node(w3)},
+                          #een_children_config{}},
+                         {#een_component_spec{id = recv_b,
+                                              module = t5_receiver,
+                                              args = [fun t5_reply_b/1],
+                                              node = make_node(w4)},
+                          #een_children_config{}},
+                         {#een_component_spec{id = recv_c,
+                                              module = t5_receiver,
+                                              args = [fun t5_reply_c/1],
+                                              node = make_node(w5)},
+                          #een_children_config{}}],
+             bindings = [{{top, start}, {sender, start}},
+                         {{sender, route_out}, {recv_a, route_in}, {route, a}},
+                         {{sender, route_out}, {recv_b, route_in}, {route, a}},
+                         {{sender, route_out}, {recv_c, route_in}, {route, a}}]}},
+    {ok, Top} = een:spawn_config(Config),
+    een_gen:cast(Top, {msg, start, {undefined, undefined}, {}}), %% Fake
+    receive pong_out -> ok end.
+    
+t5_phase_msg(0) -> {a};
+t5_phase_msg(1) -> {b};
+t5_phase_msg(2) -> {c};
+t5_phase_msg(3) -> {d};
+t5_phase_msg(4) -> {e};
+t5_phase_msg(5) -> {f};
+t5_phase_msg(6) -> {g};
+t5_phase_msg(7) -> {h};
+t5_phase_msg(8) -> {i};
+t5_phase_msg(9) -> {j}.
+
+t5_route({a}, DestList) -> find_in_dest_list([recv_a], DestList);
+t5_route({b}, DestList) -> find_in_dest_list([recv_b], DestList);
+t5_route({c}, DestList) -> find_in_dest_list([recv_c], DestList);
+t5_route({d}, DestList) -> find_in_dest_list([recv_a, recv_b], DestList);
+t5_route({e}, DestList) -> find_in_dest_list([recv_b, recv_c], DestList);
+t5_route({f}, DestList) -> find_in_dest_list([recv_a, recv_c], DestList);
+t5_route({g}, DestList) -> find_in_dest_list([recv_a, recv_b, recv_c], DestList);
+t5_route({h}, DestList) -> find_in_dest_list([recv_c], DestList);
+t5_route({i}, DestList) -> find_in_dest_list([recv_c], DestList);
+t5_route({j}, DestList) -> find_in_dest_list([recv_b], DestList).
+
+find_in_dest_list(Comps, DestList) ->
+    CompsSet = ordsets:from_list(Comps),
+    lists:filter(fun ({CompId, _, _}) -> ordsets:is_element(CompId, CompsSet) end,
+                 DestList).
+
+t5_reply_a({a}) -> reply_a_a;
+t5_reply_a({d}) -> reply_a_d;
+t5_reply_a({f}) -> reply_a_f;
+t5_reply_a({g}) -> reply_a_g.
+
+t5_reply_b({b}) -> reply_b_b;
+t5_reply_b({d}) -> reply_b_d;
+t5_reply_b({e}) -> reply_b_e;
+t5_reply_b({g}) -> reply_b_g;
+t5_reply_b({j}) -> reply_b_j.
+
+t5_reply_c({c}) -> reply_c_c;
+t5_reply_c({e}) -> reply_c_e;
+t5_reply_c({f}) -> reply_c_f;
+t5_reply_c({g}) -> reply_c_g;
+t5_reply_c({h}) -> reply_c_h;
+t5_reply_c({i}) -> reply_c_i.
+
+t5_check_reply({reply, Reply}, Phase) ->
+    t5_check_reply1(Reply, Phase).
+
+t5_check_reply1(reply_a_a, 0) -> ok;
+t5_check_reply1(reply_a_d, 3) -> ok;
+t5_check_reply1(reply_a_f, 5) -> ok;
+t5_check_reply1(reply_a_g, 6) -> ok;
+t5_check_reply1(reply_b_b, 1) -> ok;
+t5_check_reply1(reply_b_d, 3) -> ok;
+t5_check_reply1(reply_b_e, 4) -> ok;
+t5_check_reply1(reply_b_g, 6) -> ok;
+t5_check_reply1(reply_b_j, 9) -> ok;
+t5_check_reply1(reply_c_c, 2) -> ok;
+t5_check_reply1(reply_c_e, 4) -> ok;
+t5_check_reply1(reply_c_f, 5) -> ok;
+t5_check_reply1(reply_c_g, 6) -> ok;
+t5_check_reply1(reply_c_h, 7) -> ok;
+t5_check_reply1(reply_c_i, 8) -> ok.
 
 repeat(Fun, Times) ->
     fun () -> [Fun() || _ <- lists:seq(1, Times)] end.

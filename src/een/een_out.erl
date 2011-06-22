@@ -11,10 +11,12 @@ send(PortName, Msg) ->
 
 set(Bindings, PortSpecs) ->
     een:report("Setting bindings ~p~n", [Bindings]),
+    State = #een_state{config = Config = #een_children_config{routes = Routes}} =
+        een_comp:get_s(),
     {SpawnPort, DestSpawnPort} =
-        case een_comp:get_s() of
+        case State of
             #een_state{is_spawn = true,
-                       spawn_binding = {{_, SP}, {_, DestSP}}} ->
+                       spawn_binding = {{_, SP}, {_, DestSP}, spawn}} ->
                 {SP, DestSP};
             #een_state{is_spawn = false} ->
                 {undefined, undefined}
@@ -43,13 +45,19 @@ set(Bindings, PortSpecs) ->
                             {{ok, #een_port_spec{msg_type = call}}, error} ->
                                 nobinds;
                             {{ok, #een_port_spec{type = Type, msg_type = MsgType}},
-                             {ok, DestList}} ->
+                             {ok, Dests}} ->
                                 SenderId = {get('$een_component_id'), PortName},
-                                Dest = case Type of
-                                           basic -> random_pick(DestList);
-                                           multi -> DestList;
-                                           route -> todo
-                                       end,
+                                Dest =
+                                    case {Type, Dests} of
+                                         {basic, _} when is_list(Dests) ->
+                                             random_pick(Dests);
+                                         {multi, _} when is_list(Dests) ->
+                                            Dests;
+                                         {basic, {route, DestList, Route}} ->
+                                            random_pick(route(Msg, DestList, Route, Routes));
+                                         {multi, {route, DestList, Route}} ->
+                                            route(Msg, DestList, Route, Routes)
+                                    end,
                                 do_send(PortName, SenderId, MsgType, Dest, Msg)
                         end
                 end
@@ -57,7 +65,7 @@ set(Bindings, PortSpecs) ->
     put('$een_out_fun', OutFun),
     ok.
 
-do_send(PortName, SenderId, MsgType, {CompId, Pid, RemotePortName}, Msg) ->
+do_send(_PortName, SenderId, MsgType, {_CompId, Pid, RemotePortName}, Msg) ->
     %io:format("msg ~p from (~p:~p:~p) to (~p:~p:~p)~n", [Msg, get('$een_component_id'), self(), PortName, CompId, Pid, RemotePortName]),
     case MsgType of
         cast -> een_gen:cast(Pid, {msg, RemotePortName, SenderId, Msg});
@@ -80,3 +88,7 @@ do_send(PortName, SenderId, MsgType, DestList, Msg) ->
 
 random_pick(List) ->
     lists:nth(random:uniform(length(List)), List).
+
+route(Msg, DestList, Route, Routes) ->
+    RouteFun = orddict:fetch(Route, Routes),
+    RouteFun(Msg, DestList).

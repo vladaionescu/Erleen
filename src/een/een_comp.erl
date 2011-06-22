@@ -19,11 +19,8 @@
                             int_out = [#een_port_spec{name = shutdown,
                                                       type = multi,
                                                       msg_type = cast,
-                                                      arrity = 1}]}).
-
-%% TODO move to general control interface spec
--define(SPAWN_CONTROL_INTERFACE_SPEC,
-        #een_interface_spec{int_out = [#een_port_spec{name = kill,
+                                                      arrity = 1},
+                                       #een_port_spec{name = kill,
                                                       type = route,
                                                       msg_type = cast,
                                                       arrity = 1}]}).
@@ -240,7 +237,8 @@ reconfig_children(Config = #een_children_config{is_spawn = IsSpawn,
                                                 children = Children,
                                                 version = Version,
                                                 spawn_init = SpawnInit,
-                                                spawn_binding = SpawnBinding}) ->
+                                                bindings = Bindings,
+                                                routes = Routes}) ->
     State = #een_state{spec = Spec = #een_component_spec{id = Id},
                        map_comps = MCs} = get_s(),
     MCs1 =
@@ -261,7 +259,7 @@ reconfig_children(Config = #een_children_config{is_spawn = IsSpawn,
             put_s(State1#een_state{is_spawn = false, map_comps = MCs2});
         true ->
             put_s(State1#een_state{is_spawn = true,
-                                   spawn_binding = SpawnBinding}),
+                                   spawn_binding = find_spawn_binding(Bindings)}),
             case Version of
                 new      -> [{ok, _} = register_new_spawn_child() ||
                                 _ <- lists:seq(1, SpawnInit)];
@@ -271,6 +269,13 @@ reconfig_children(Config = #een_children_config{is_spawn = IsSpawn,
     spawn_new_children(),
     register_bindings(),
     send_reconfig_children().
+
+find_spawn_binding([]) ->
+    error;
+find_spawn_binding([{_, _, spawn} = Binding | _Rest]) ->
+    Binding;
+find_spawn_binding([_Binding | Rest]) ->
+    find_spawn_binding(Rest).
 
 register_bindings() ->
     #een_state{config = #een_children_config{bindings = Bindings},
@@ -433,16 +438,17 @@ erase_spawn_child(ChildId) ->
 
 replace_id_in_children_config(
         NewId, OldId,
-        ChildrenConfig = #een_children_config{spawn_binding = SpawnBinding,
-                                              bindings = Bindings}) ->
+        ChildrenConfig = #een_children_config{bindings = Bindings}) ->
     ChildrenConfig#een_children_config{
-        spawn_binding = replace_id_in_binding(NewId, OldId, SpawnBinding),
         bindings = replace_id_in_bindings(NewId, OldId, Bindings)}.
 
 replace_id_in_bindings(NewId, OldId, Bindings) ->
     lists:map(fun (Binding) -> replace_id_in_binding(NewId, OldId, Binding) end,
               Bindings).
 
+replace_id_in_binding(NewId, OldId, {From, To, Type}) ->
+    {replace_id_in_port(NewId, OldId, From), replace_id_in_port(NewId, OldId, To),
+     Type};
 replace_id_in_binding(NewId, OldId, {From, To}) ->
     {replace_id_in_port(NewId, OldId, From), replace_id_in_port(NewId, OldId, To)};
 replace_id_in_binding(_, _, undefined) ->
@@ -487,15 +493,28 @@ respawn_child(Id, Restart) ->
             {ok, NewPid}
     end.
 
-register_binding({{Id1, Port1}, {Id2, Port2}}, MCs) ->
+register_binding({From, To}, MCs) ->
+    register_binding1(From, To, basic, MCs);
+register_binding({From, To, Type}, MCs) ->
+    register_binding1(From, To, Type, MCs).
+
+register_binding1({Id1, Port1}, {Id2, Port2}, Type, MCs) ->
     %% TODO: check validity
     #een_component{pid = Pid1, out_binds = OutBinds0} = orddict:fetch(Id1, MCs),
     #een_component{pid = Pid2, in_binds = InBinds0} = orddict:fetch(Id2, MCs),
     Entry2 = {Id2, Pid2, Port2},
     OutBinds1 =
-        orddict:update(Port1,
-                       fun (PortList) -> [Entry2 | PortList] end, [Entry2],
-                       OutBinds0),
+        case Type of
+            {route, Route} ->
+                orddict:update(Port1,
+                               fun ({route, PortList, Route1}) when Route =:= Route1 ->
+                                       {route, [Entry2 | PortList], Route}
+                               end, {route, [Entry2], Route}, OutBinds0);
+            _ ->
+                orddict:update(Port1,
+                               fun (PortList) -> [Entry2 | PortList] end,
+                               [Entry2], OutBinds0)
+        end,
     Entry1 = {Id1, Pid1, Port1},
     InBinds1 =
         orddict:update(Port2,
