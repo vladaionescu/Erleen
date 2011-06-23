@@ -16,10 +16,12 @@
                               version = new %% new | changed | unchanged
                              }).
 
+%% Warning: preserve for Java bindings
 -record(een_interface_spec, {ext_in = [],
                              ext_out = [],
                              int_in = [],
                              int_out = []}).
+%% Warning: preserve for Java bindings
 -record(een_port_spec, {name,
                         type = basic, %% basic | multi
                         msg_type,     %% cast | call
@@ -52,15 +54,3 @@
                         out_binds = orddict:new(),
                         spec,
                         children_config}).
-
-%% Allowed binding types:
-%%
-%% Sender  - Receiver            Sender        : Receiver          Sender     : Receiver
-%% --------------------------------------------------------------------------------------
-%% basic   - basic        (Msg = Params        : Params,   Reply = ReplyBit   : ReplyBit)
-%% [basic] - basic        (Msg = Params        : Params,   Reply = ReplyBit   : ReplyBit)
-%% basic   - [basic]      (Msg = Params        : Params,   Reply = ReplyBit   : ReplyBit)
-%% [basic] - multi        (Msg = Params        : [Params], Reply = ReplyBit   : ReplyBit)
-%% multi   - [basic]      (Msg = Params        : Params,   Reply = [ReplyBit] : ReplyBit)
-%% route   - [basic]      (Msg = {Key, Params} : Params,   Reply = ReplyBit   : ReplyBit)
-%% spawn   - basic        (Msg = Params        : Params,   Reply = ReplyBit   : ReplyBit)

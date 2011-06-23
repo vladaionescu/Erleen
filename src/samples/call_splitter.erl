@@ -7,7 +7,8 @@
 
 -include_lib("erleen.hrl").
 
--record(state, {calls = dict:new()}).
+-record(state, {calls = dict:new(),
+                shutdown = false}).
 
 reinit(_, _, [Arrity]) ->
     {ok,
@@ -23,11 +24,16 @@ reinit(_, _, [Arrity]) ->
                                                    arrity = Arrity}]},
      #state{}}.
 
+handle_in(shutdown, {Reason}, _From, State = #state{shutdown = false}) ->
+    {ok, MsgId} = een:out(shutdown, {Reason}),
+    {ok, State#state{shutdown = {true, Reason, MsgId}}};
 handle_in(in_call, Params, From, State = #state{calls = Calls}) ->
     {ok, MsgId} = een:out(out_call, Params),
     een:out(out_cast, Params),
     {ok, State#state{calls = dict:store(MsgId, From, Calls)}}.
 
+handle_reply(MsgId, _Reply, State = #state{shutdown = {true, Reason, MsgId}}) ->
+    {shutdown, Reason, State};
 handle_reply(MsgId, Reply, State = #state{calls = Calls}) ->
     From = dict:fetch(MsgId, Calls),
     NewCalls = dict:erase(MsgId, Calls),

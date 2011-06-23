@@ -7,6 +7,8 @@
 
 -include_lib("erleen.hrl").
 
+-record(state, {shutdown = false}).
+
 reinit(_, _, []) ->
     {ok,
      #een_interface_spec{ext_in  = [#een_port_spec{name = start,
@@ -14,14 +16,17 @@ reinit(_, _, []) ->
                          ext_out = [#een_port_spec{name = start,
                                                    msg_type = cast,
                                                    type = multi}]},
-     nostate}.
+     #state{}}.
 
-handle_in(start, {}, _From, nostate) ->
+handle_in(shutdown, {Reason}, _From, State = #state{shutdown = false}) ->
+    {ok, MsgId} = een:out(shutdown, {Reason}),
+    {ok, State#state{shutdown = {true, Reason, MsgId}}};
+handle_in(start, {}, _From, State) ->
     een:out(start, {}),
-    {ok, nostate}.
+    {ok, State}.
 
-handle_reply(_, _, _) ->
-    unexpected.
+handle_reply(MsgId, _Reply, State = #state{shutdown = {true, Reason, MsgId}}) ->
+    {shutdown, Reason, State}.
 
-terminate(Reason, nostate) ->
+terminate(Reason, #state{}) ->
     Reason.

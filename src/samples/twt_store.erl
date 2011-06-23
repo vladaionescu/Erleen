@@ -9,7 +9,8 @@
 
 %% State definition
 -record(state, {tweets = dict:new(),
-                get_tweets_calls = dict:new()}).
+                get_tweets_calls = dict:new(),
+                shutdown = false}).
 
 %% Initialization
 reinit(_, _, []) ->
@@ -29,6 +30,10 @@ reinit(_, _, []) ->
      %% Initial state
      #state{}}.
 
+%% Shutdown message
+handle_in(shutdown, {Reason}, _From, State = #state{shutdown = false}) ->
+    {ok, MsgId} = een:out(shutdown, {Reason}),
+    {ok, State#state{shutdown = {true, Reason, MsgId}}};
 %% Tweet message
 handle_in(tweet, {User, Tweet}, From, State = #state{tweets = Tweets}) ->
     %% Add the tweet to the corresponding user
@@ -48,6 +53,9 @@ handle_in(get_followed_tweets, {User}, From,
     %% Return the updated state
     {ok, State#state{get_tweets_calls = NewGetTweetsCalls}}.
 
+%% Shutdown reply
+handle_reply(MsgId, _Reply, State = #state{shutdown = {true, Reason, MsgId}}) ->
+    {shutdown, Reason, State};
 %% Reply from query_follow
 handle_reply(MsgId, {reply, FollowingUsers},
              State = #state{get_tweets_calls = GetTweetsCalls,

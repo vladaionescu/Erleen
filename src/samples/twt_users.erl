@@ -7,7 +7,8 @@
 
 -include_lib("erleen.hrl").
 
--record(state, {users = dict:new()}).
+-record(state, {users = dict:new(),
+                shutdown = false}).
 
 reinit(_, _, []) ->
     {ok,
@@ -22,6 +23,9 @@ reinit(_, _, []) ->
                                                    arrity = 1}]},
      #state{}}.
 
+handle_in(shutdown, {Reason}, _From, State = #state{shutdown = false}) ->
+    {ok, MsgId} = een:out(shutdown, {Reason}),
+    {ok, State#state{shutdown = {true, Reason, MsgId}}};
 handle_in(new_user, {User}, From, State = #state{users = Users}) ->
     case dict:find(User, Users) of
         {ok, _} ->
@@ -45,8 +49,8 @@ handle_in(query_follow, User, From, State = #state{users = Users}) ->
     een:reply(From, dict:fetch(User, Users)),
     {ok, State}.
 
-handle_reply(_, _, _) ->
-    unexpected.
+handle_reply(MsgId, _Reply, State = #state{shutdown = {true, Reason, MsgId}}) ->
+    {shutdown, Reason, State}.
 
 terminate(Reason, _State) ->
     Reason.

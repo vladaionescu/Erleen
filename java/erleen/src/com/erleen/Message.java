@@ -1,33 +1,54 @@
-/*
- * To change this template, choose Tools | Templates
- * and open the template in the editor.
- */
 
 package com.erleen;
 
 import com.ericsson.otp.erlang.OtpErlangObject;
-import java.util.ArrayList;
+import com.ericsson.otp.erlang.OtpErlangTuple;
 
-/**
- *
- * @author aether
- */
-public class Message {
+public class Message
+{
+    private final String port;
+    private final OtpErlangObject from;
+    private final boolean isInward;
+    private final OtpErlangObject msg;
 
-    Message(String string, ArrayList<OtpErlangObject> arrayList) {
-        throw new UnsupportedOperationException("Not yet implemented");
+    public Message(String port, OtpErlangObject[] msgTuple)
+    {
+        this.isInward = false;
+        this.port = port;
+        this.msg = new OtpErlangTuple(msgTuple);
+        this.from = null;
     }
 
-    public String getPortName() {
-        throw new UnsupportedOperationException("Not yet implemented");
+    Message(String port, OtpErlangObject msgTupleOrList, OtpErlangObject from)
+    {
+        this.isInward = true;
+        this.port = port;
+        this.msg = msgTupleOrList;
+        this.from = from;
     }
 
-    public Object getArg(int i) {
-        throw new UnsupportedOperationException("Not yet implemented");
+    public String getPortName()
+    {
+        return port;
     }
 
-    public MessageId out() {
-        throw new UnsupportedOperationException("Not yet implemented");
+    public OtpErlangObject getFrom()
+    {
+        return from;
     }
 
+    public OtpErlangObject getArg(int i)
+    {
+        return ((OtpErlangTuple) msg).elementAt(i);
+    }
+
+    public OtpErlangObject getMessage()
+    {
+        return msg;
+    }
+
+    public boolean isIsInward()
+    {
+        return isInward;
+    }
 }

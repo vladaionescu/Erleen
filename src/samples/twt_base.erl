@@ -7,7 +7,8 @@
 
 -include_lib("erleen.hrl").
 
--record(state, {calls = dict:new()}).
+-record(state, {calls = dict:new(),
+                shutdown = false}).
 
 reinit(_, _, []) ->
     {ok,
@@ -37,6 +38,9 @@ reinit(_, _, []) ->
                                                    arrity = 1}]},
      #state{}}.
 
+handle_in(shutdown, {Reason}, _From, State = #state{shutdown = false}) ->
+    {ok, MsgId} = een:out(shutdown, {Reason}),
+    {ok, State#state{shutdown = {true, Reason, MsgId}}};
 handle_in(Port, Params, From, State = #state{calls = Calls}) ->
     case een:out(Port, Params) of
         {ok, MsgId} -> {ok, State#state{calls = dict:store(MsgId, From, Calls)}};
@@ -44,10 +48,15 @@ handle_in(Port, Params, From, State = #state{calls = Calls}) ->
                        {ok, State}
     end.
 
-handle_reply(MsgId, {reply, Reply}, State = #state{calls = Calls}) ->
+handle_reply(MsgId, _Reply, State = #state{shutdown = {true, Reason, MsgId}}) ->
+    {shutdown, Reason, State};
+handle_reply(MsgId, Reply, State = #state{calls = Calls}) ->
     From = dict:fetch(MsgId, Calls),
     NewCalls = dict:erase(MsgId, Calls),
-    een:reply(From, Reply),
+    case Reply of
+        {reply, InReply} -> een:reply(From, InReply);
+        {down, _}        -> een:reply(From, Reply)
+    end,
     {ok, State#state{calls = NewCalls}}.
 
 handle_child_exit(_Child, State) ->

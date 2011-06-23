@@ -60,9 +60,6 @@ async_call(Pid, Msg) ->
 
 do_call(Pid, Msg) ->
     Monitor = erlang:monitor(process, Pid),
-    receive {'DOWN', Monitor, process, Pid, noproc} -> throw(noproc)
-    after 0 -> ok
-    end,
     Pid ! {'$een_call', Msg, {self(), Monitor}},
     Monitor.
 

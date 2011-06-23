@@ -8,7 +8,8 @@
 -include_lib("erleen.hrl").
 
 -record(state, {count = 0,
-                freq}).
+                freq,
+                shutdown = false}).
 
 reinit(_, _, [Arrity, Freq]) ->
     {ok,
@@ -17,6 +18,9 @@ reinit(_, _, [Arrity, Freq]) ->
                                                    arrity = Arrity}]},
      #state{freq = Freq}}.
 
+handle_in(shutdown, {Reason}, _From, State = #state{shutdown = false}) ->
+    {ok, MsgId} = een:out(shutdown, {Reason}),
+    {ok, State#state{shutdown = {true, Reason, MsgId}}};
 handle_in(msg, Params, _From,
           State = #state{count = Count,
                          freq = Freq}) ->
@@ -28,8 +32,8 @@ handle_in(msg, Params, _From,
     end,
     {ok, State#state{count = Count + 1}}.
 
-handle_reply(_, _, _) ->
-    unexpected.
+handle_reply(MsgId, _Reply, State = #state{shutdown = {true, Reason, MsgId}}) ->
+    {shutdown, Reason, State}.
 
 terminate(Reason, _State) ->
     Reason.

@@ -1,25 +1,37 @@
 
-package com.erleen;
+package com.erleen.samples;
 
 import com.ericsson.otp.erlang.OtpErlangAtom;
+import com.ericsson.otp.erlang.OtpErlangExit;
 import com.ericsson.otp.erlang.OtpErlangList;
 import com.ericsson.otp.erlang.OtpErlangObject;
 import com.ericsson.otp.erlang.OtpErlangString;
+import com.erleen.ChildExitAction;
+import com.erleen.Component;
+import com.erleen.ErleenException;
+import com.erleen.InterfaceSpec;
+import com.erleen.Message;
+import com.erleen.MessageId;
+import com.erleen.PortSpec;
+import com.erleen.Reply;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-public class TweetStore implements Component
+public class TweetStore extends Component
 {
-    private Map<String, List<OtpErlangString>> tweets;
-    private Map<MessageId, From> getTweetsCalls;
+    private static final long serialVersionUID = 0L;
 
-    public InterfaceSpec reinit()
+    private Map<String, List<OtpErlangString>> tweets;
+    private Map<MessageId, Message> getTweetsCalls;
+
+    public InterfaceSpec reinit(String OldClass, Component OldState,
+            OtpErlangObject[] Params)
     {
         // Initialize members
         tweets = new HashMap<String, List<OtpErlangString>>();
-        getTweetsCalls = new HashMap<MessageId, From>();
+        getTweetsCalls = new HashMap<MessageId, Message>();
 
         //
         // Define interface spec
@@ -47,16 +59,16 @@ public class TweetStore implements Component
         return ifSpec;
     }
 
-    public void handleIn(Message msg, From from)
+    public void handleIn(Message msg) throws ErleenException, OtpErlangExit
     {
         // Match on port names
         if(msg.getPortName().equals("tweet"))
-            handleTweet(msg, from);
+            handleTweet(msg);
         else if(msg.getPortName().equals("get_followed_tweets"))
-            handleGetFollowedTweets(msg, from);
+            handleGetFollowedTweets(msg);
     }
 
-    private void handleTweet(Message msg, From from)
+    private void handleTweet(Message msg) throws ErleenException, OtpErlangExit
     {
         // Get user
         String user = msg.getArg(1).toString();
@@ -77,10 +89,11 @@ public class TweetStore implements Component
         }
 
         // Reply ok
-        from.reply(new OtpErlangAtom("ok"));
+        getDispatcher().reply(this, msg.getFrom(), new OtpErlangAtom("ok"));
     }
 
-    private void handleGetFollowedTweets(Message msg, From from)
+    private void handleGetFollowedTweets(Message msg)
+            throws ErleenException, OtpErlangExit
     {
         // Get user from args
         final String user = msg.getArg(1).toString();
@@ -88,18 +101,17 @@ public class TweetStore implements Component
         // Out querry_follow
         Message querryFollow =
                 new Message("query_follow",
-                    new ArrayList<OtpErlangObject>()
-                        {{add(new OtpErlangString(user));}});
-        MessageId querryFollowMsgId = querryFollow.out();
+                    new OtpErlangObject[] {new OtpErlangString(user)});
+        MessageId querryFollowMsgId = getDispatcher().out(this, querryFollow);
 
-        // Store from of the request
-        getTweetsCalls.put(querryFollowMsgId, from);
+        // Store request
+        getTweetsCalls.put(querryFollowMsgId, msg);
     }
 
-    public void handleReply(MessageId id, Reply reply)
+    public void handleReply(Reply reply) throws ErleenException, OtpErlangExit
     {
-        // Get previously stored from
-        From from = getTweetsCalls.remove(id);
+        // Get previously stored request
+        Message msg = getTweetsCalls.remove(reply.getMessageId());
 
         // Build up list of all tweets the user is following
         List<OtpErlangObject> followingTweets =
@@ -115,15 +127,17 @@ public class TweetStore implements Component
         // Reply with the tweets from all the users we are following
         OtpErlangObject[] followingTweetsArray =
                 (OtpErlangObject[]) followingTweets.toArray();
-        from.reply(new OtpErlangList(followingTweetsArray));
+        getDispatcher().reply(this, msg.getFrom(),
+                new OtpErlangList(followingTweetsArray));
     }
 
-    public ChildExitAction handleChildExit(String componentName, Reason reason)
+    public ChildExitAction handleChildExit(String componentName,
+            OtpErlangObject reason) throws ErleenException, OtpErlangExit
     {
         return ChildExitAction.shutdown(reason);
     }
 
-    public Reason terminate(Reason reason)
+    public OtpErlangObject terminate(OtpErlangObject reason)
     {
         return reason;
     }

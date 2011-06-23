@@ -22,6 +22,21 @@ t4_test_() ->
 t5_test_() ->
     {timeout, 60, repeat(fun t5/0, 100)}.
 
+t6_test_() ->
+    {timeout, 60, repeat(fun t6/0, 100)}.
+
+t7_test_() ->
+    {timeout, 60, repeat(fun t7/0, 100)}.
+
+t8_test_() ->
+    {timeout, 60, repeat(fun t8/0, 100)}.
+
+t9_test_() ->
+    {timeout, 60, repeat(fun t9/0, 100)}.
+
+t10_test_() ->
+    {timeout, 60, repeat(fun t10/0, 10)}.
+
 t1() ->
     Config =
         {#een_component_spec{id = top,
@@ -541,6 +556,37 @@ t5_check_reply1(reply_c_f, 5) -> ok;
 t5_check_reply1(reply_c_g, 6) -> ok;
 t5_check_reply1(reply_c_h, 7) -> ok;
 t5_check_reply1(reply_c_i, 8) -> ok.
+
+t6() ->
+    {ok, Top} = twt:start(),
+    twt2:reconfig(Top),
+    een:shutdown(Top).
+
+t7() ->
+    {ok, Top} = twt:start(),
+    erlang:yield(),
+    twt2:reconfig(Top),
+    een:shutdown(Top).
+
+t8() ->
+    {ok, Top} = twt:start(),
+    twt2:reconfig(Top),
+    erlang:yield(),
+    een:shutdown(Top).
+
+t9() ->
+    {ok, Top} = twt:start(),
+    erlang:yield(),
+    twt2:reconfig(Top),
+    erlang:yield(),
+    een:shutdown(Top).
+
+t10() ->
+    {ok, Top} = twt:start(),
+    timer:sleep(1000),
+    twt2:reconfig(Top),
+    timer:sleep(1000),
+    een:shutdown(Top).
 
 repeat(Fun, Times) ->
     fun () -> [Fun() || _ <- lists:seq(1, Times)] end.

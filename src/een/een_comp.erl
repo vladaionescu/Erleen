@@ -14,11 +14,11 @@
 
 -define(CONTROL_INTERFACE_SPEC,
         #een_interface_spec{ext_in  = [#een_port_spec{name = shutdown,
-                                                      msg_type = cast,
+                                                      msg_type = call,
                                                       arrity = 1}],
                             int_out = [#een_port_spec{name = shutdown,
                                                       type = multi,
-                                                      msg_type = cast,
+                                                      msg_type = call,
                                                       arrity = 1},
                                        #een_port_spec{name = kill,
                                                       type = route,
@@ -98,8 +98,19 @@ handle_call({reconfig, Spec, ChildrenConfig}, _From, nostate) ->
     ok = reconfig(Spec, ChildrenConfig),
     {reply, ok, nostate};
 handle_call({msg, LocalId, SenderId, Msg}, From, nostate) ->
-    do_handle_in(LocalId, SenderId, Msg, From).
+    do_handle_in(LocalId, SenderId, Msg, From);
+handle_call({nobinds_call, Type}, From, nostate) ->
+    Reply =
+        case Type of
+            multi -> [];
+            basic -> {down, nobinds}
+        end,
+    een_gen:reply(From, {'$nobinds_reply', Reply}),
+    {ok, nostate}.
 
+handle_reply(MsgId, {reply, {'$nobinds_reply', Reply}}, nostate) ->
+    #een_state{mst = Mst, mod = Mod} = get_s(),
+    handle_return(Mod:handle_reply(MsgId, Reply, Mst));
 handle_reply(MsgId, Reply, nostate) ->
     do_handle_reply(MsgId, Reply).
 
@@ -118,7 +129,7 @@ handle_child_exit(Pid, removed, nostate) ->
     put_s(State#een_state{map_comps = NewMCs, map_pid_compid = NewMPC}),
     {ok, nostate};
 handle_child_exit(_Pid, {shutdown, _}, nostate) ->
-    todo;
+    {ok, nostate};
 handle_child_exit(Pid, Reason, nostate) ->
     State = #een_state{map_pid_compid = MPC,
                        mod = Mod,
@@ -237,8 +248,7 @@ reconfig_children(Config = #een_children_config{is_spawn = IsSpawn,
                                                 children = Children,
                                                 version = Version,
                                                 spawn_init = SpawnInit,
-                                                bindings = Bindings,
-                                                routes = Routes}) ->
+                                                bindings = Bindings}) ->
     State = #een_state{spec = Spec = #een_component_spec{id = Id},
                        map_comps = MCs} = get_s(),
     MCs1 =
@@ -282,19 +292,20 @@ register_bindings() ->
                spec = #een_component_spec{id = OwnId},
                is_spawn = IsSpawn,
                map_comps = MCs} = get_s(),
+    ChildrenIds = lists:filter(fun (ChildId) when ChildId =:= OwnId -> false;
+                                   (_)                              -> true
+                               end, orddict:fetch_keys(MCs)),
     BindingsToRegister =
         case IsSpawn of
             false ->
                 Bindings;
             true ->
-                ChildrenIds = orddict:fetch_keys(MCs),
                 lists:foldl(
-                    fun (ThisId, BTR) when ThisId =:= OwnId ->
-                            BTR;
-                        (ThisId, BTR) ->
-                            spawn_child_bindings(ThisId) ++ BTR
-                    end, [], ChildrenIds)
-        end,
+                    fun (ThisId, BTR) -> spawn_child_bindings(ThisId) ++ BTR end,
+                    [], ChildrenIds)
+        end ++
+            lists:map(fun (Child) -> {{OwnId, shutdown}, {Child, shutdown}} end,
+                      ChildrenIds),
     do_register_bindings(BindingsToRegister).
 
 do_register_bindings(Bindings) ->
@@ -324,17 +335,22 @@ register_child({Spec = #een_component_spec{id = Id,
         {unchanged, unchanged} ->
             orddict:update(
                 Id,
-                fun (Component) ->
-                        Component#een_component{in_binds = orddict:new(),
-                                                out_binds = orddict:new()}
+                fun (Component = #een_component{spec = OldSpec,
+                                                children_config = OldConfig}) ->
+                        Component#een_component{
+                            spec = OldSpec#een_component_spec{version = unchanged},
+                            children_config = OldConfig#een_children_config{version = unchanged},
+                            in_binds = orddict:new(),
+                            out_binds = orddict:new()}
                 end,
                 MCs);
         {changed, unchanged} ->
             orddict:update(
                 Id,
-                fun (Component) ->
+                fun (Component = #een_component{children_config = OldConfig}) ->
                         Component#een_component{
                             spec = Spec#een_component_spec{version = new},
+                            children_config = OldConfig#een_children_config{version = unchanged},
                             in_binds = orddict:new(),
                             out_binds = orddict:new()}
                 end,
@@ -342,8 +358,9 @@ register_child({Spec = #een_component_spec{id = Id,
         {unchanged, changed} ->
             orddict:update(
                 Id,
-                fun (Component) ->
+                fun (Component = #een_component{spec = OldSpec}) ->
                         Component#een_component{
+                            spec = OldSpec#een_component_spec{version = unchanged},
                             children_config =
                                 ChildrenConfig#een_children_config{
                                     version = new},
@@ -418,10 +435,12 @@ send_new_spawn_child_bindings(ThisId) ->
     ok = een_config:set_ext_bindings(Pid, InBinds, OutBinds).
 
 spawn_child_bindings(ThisId) ->
-    #een_state{config = #een_children_config{
+    #een_state{spec = #een_component_spec{id = OwnId},
+               config = #een_children_config{
                             children = [{#een_component_spec{id = Id}, _}],
                             bindings = Bindings}} = get_s(),
-    replace_id_in_bindings(ThisId, Id, Bindings).
+    replace_id_in_bindings(ThisId, Id, Bindings) ++
+        [{{OwnId, shutdown}, {ThisId, shutdown}}].
 
 erase_spawn_child(ChildId) ->
     een:report("Erasing spawn child ~p because it died~n", [ChildId]),
@@ -574,9 +593,9 @@ send_reconfig_children() ->
     orddict:fold(
         fun (Id, _, ok) when Id =:= SelfId ->
                 ok;
-            (_, #een_component{pid = Pid,
-                               spec = Spec,
-                               children_config = ChildrenConfig}, _) ->
+            (_Id, #een_component{pid = Pid,
+                                 spec = Spec,
+                                 children_config = ChildrenConfig}, _) ->
                 ok = een_config:reconfig(Pid, Spec, ChildrenConfig),
                 ok
         end, ok, MCs).
@@ -666,7 +685,9 @@ handle_return({ok, NewMst}) ->
 handle_return({stop, Reason, NewMst}) ->
     State = get_s(),
     put_s(State#een_state{mst = NewMst}),
-    {stop, Reason, nostate}.
+    {stop, Reason, nostate};
+handle_return({shutdown, Reason, NewMst}) ->
+    handle_return({stop, {shutdown, Reason}, NewMst}).
 
 merge_orddict(Dict1, Dict2) ->
     orddict:merge(fun (K, _, _) -> throw({merge_conflict, K}) end, Dict1, Dict2).

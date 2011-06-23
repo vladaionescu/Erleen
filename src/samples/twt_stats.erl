@@ -7,7 +7,8 @@
 
 -include_lib("erleen.hrl").
 
--record(state, {total_tweets = 0}).
+-record(state, {total_tweets = 0,
+                shutdown = false}).
 
 reinit(_, _, []) ->
     {ok,
@@ -16,6 +17,9 @@ reinit(_, _, []) ->
                                                    arrity = 2}]},
      #state{}}.
 
+handle_in(shutdown, {Reason}, _From, State = #state{shutdown = false}) ->
+    {ok, MsgId} = een:out(shutdown, {Reason}),
+    {ok, State#state{shutdown = {true, Reason, MsgId}}};
 handle_in(tweet, {_User, _Tweet}, _From,
           State = #state{total_tweets = TotalTweets}) ->
     if
@@ -26,8 +30,8 @@ handle_in(tweet, {_User, _Tweet}, _From,
     end,
     {ok, State#state{total_tweets = TotalTweets + 1}}.
 
-handle_reply(_, _, _) ->
-    unexpected.
+handle_reply(MsgId, _Reply, State = #state{shutdown = {true, Reason, MsgId}}) ->
+    {shutdown, Reason, State}.
 
 terminate(Reason, _State) ->
     Reason.

@@ -11,7 +11,7 @@ send(PortName, Msg) ->
 
 set(Bindings, PortSpecs) ->
     een:report("Setting bindings ~p~n", [Bindings]),
-    State = #een_state{config = Config = #een_children_config{routes = Routes}} =
+    State = #een_state{config = #een_children_config{routes = Routes}} =
         een_comp:get_s(),
     {SpawnPort, DestSpawnPort} =
         case State of
@@ -42,8 +42,10 @@ set(Bindings, PortSpecs) ->
                                 throw({invalid_port, PortName});
                             {{ok, #een_port_spec{msg_type = cast}}, error} ->
                                 ok;
-                            {{ok, #een_port_spec{msg_type = call}}, error} ->
-                                nobinds;
+                            {{ok, #een_port_spec{msg_type = call,
+                                                 type = Type}}, error} ->
+                                {ok, een_gen:async_call(self(),
+                                                        {nobinds_call, Type})};
                             {{ok, #een_port_spec{type = Type, msg_type = MsgType}},
                              {ok, Dests}} ->
                                 SenderId = {get('$een_component_id'), PortName},
