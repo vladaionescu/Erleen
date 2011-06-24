@@ -7,7 +7,6 @@ import com.ericsson.otp.erlang.OtpErlangList;
 import com.ericsson.otp.erlang.OtpErlangObject;
 import com.ericsson.otp.erlang.OtpErlangPid;
 import com.ericsson.otp.erlang.OtpErlangRef;
-import com.ericsson.otp.erlang.OtpErlangString;
 import com.ericsson.otp.erlang.OtpErlangTuple;
 import java.io.Serializable;
 
@@ -17,8 +16,8 @@ public abstract class Component implements Serializable
     private String componentId;
     private Dispatcher dispatcher;
 
-    public abstract InterfaceSpec reinit(String OldClassName,
-            Component OldState, OtpErlangObject[] Params);
+    public abstract InterfaceSpec reinit(String oldClassName,
+            Component oldState, OtpErlangObject[] params);
     public abstract void handleIn(Message msg)
             throws ErleenException, OtpErlangExit;
     public abstract void handleReply(Reply reply)

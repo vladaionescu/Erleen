@@ -42,7 +42,9 @@ handle_call({register_java_node, Pid}, _From,
               [?MODULE, node(), node(Pid), Pid]),
     State1 =
         case orddict:find(node(Pid), Waits) of
-            {ok, WaitFrom} -> gen_server:reply(WaitFrom, ok),
+            {ok, WaitFroms} -> lists:foreach(
+                                   fun (WaitFrom) -> gen_server:reply(WaitFrom, ok) end,
+                                   WaitFroms),
                               State#state{waits = orddict:erase(node(Pid), Waits)};
             error          -> State
         end,
@@ -53,7 +55,10 @@ handle_call({wait_connection, Node}, From, State = #state{waits = Waits,
                                                           java_nodes = JN}) ->
     case orddict:find(Node, JN) of
         {ok, _} -> {reply, ok, State};
-        error   -> NewWaits = orddict:store(Node, From, Waits),
+        error   -> NewWaits = orddict:update(
+                                  Node,
+                                  fun (FromList) -> [From | FromList] end, [From],
+                                  Waits),
                    {noreply, State#state{waits = NewWaits}}
     end.
 

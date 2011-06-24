@@ -25,12 +25,16 @@ reinit(OldModule, OldState,
     {ok, InterfaceSpec, State0}.
 
 handle_in(Port, Msg, From, State) ->
-    ok = call_java(handle_in, [Port, Msg, From], State),
-    {ok, State}.
+    case call_java(handle_in, [Port, Msg, From], State) of
+        ok                 -> {ok, State};
+        {shutdown, Reason} -> {shutdown, Reason, State}
+    end.
 
 handle_reply(MsgId, Reply, State) ->
-    ok = call_java(handle_reply, [MsgId, Reply], State),
-    {ok, State}.
+    case call_java(handle_reply, [MsgId, Reply], State) of
+        ok                 -> {ok, State};
+        {shutdown, Reason} -> {shutdown, Reason, State}
+    end.
 
 handle_child_exit(Child, Reason, State) ->
     case call_java(handle_child_exit, [Child, Reason], State) of

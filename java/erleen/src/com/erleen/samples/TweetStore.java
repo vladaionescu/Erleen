@@ -14,6 +14,7 @@ import com.erleen.Message;
 import com.erleen.MessageId;
 import com.erleen.PortSpec;
 import com.erleen.Reply;
+import com.erleen.Shutdown;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -25,6 +26,8 @@ public class TweetStore extends Component
 
     private Map<String, List<OtpErlangString>> tweets;
     private Map<MessageId, Message> getTweetsCalls;
+    private OtpErlangObject shutdownReason;
+    private MessageId shutdownMessageId;
 
     public InterfaceSpec reinit(String OldClass, Component OldState,
             OtpErlangObject[] Params)
@@ -32,6 +35,8 @@ public class TweetStore extends Component
         // Initialize members
         tweets = new HashMap<String, List<OtpErlangString>>();
         getTweetsCalls = new HashMap<MessageId, Message>();
+        shutdownReason = null;
+        shutdownMessageId = null;
 
         //
         // Define interface spec
@@ -62,10 +67,14 @@ public class TweetStore extends Component
     public void handleIn(Message msg) throws ErleenException, OtpErlangExit
     {
         // Match on port names
-        if(msg.getPortName().equals("tweet"))
+        if (msg.getPortName().equals("tweet"))
             handleTweet(msg);
-        else if(msg.getPortName().equals("get_followed_tweets"))
+        else if (msg.getPortName().equals("get_followed_tweets"))
             handleGetFollowedTweets(msg);
+        else if (msg.getPortName().equals("shutdown"))
+            handleShutdown(msg);
+        else
+            throw new RuntimeException("Invalid port");
     }
 
     private void handleTweet(Message msg) throws ErleenException, OtpErlangExit
@@ -77,7 +86,7 @@ public class TweetStore extends Component
 
         // Store tweet in user's tweets list
         List<OtpErlangString> userTweets = tweets.get(user);
-        if(userTweets == null)
+        if (userTweets == null)
         {
             userTweets = new ArrayList<OtpErlangString>();
             userTweets.add(tweet);
@@ -108,26 +117,46 @@ public class TweetStore extends Component
         getTweetsCalls.put(querryFollowMsgId, msg);
     }
 
+    private void handleShutdown(Message msg) throws ErleenException
+    {
+        if (shutdownMessageId != null || shutdownReason != null)
+            throw new RuntimeException("Invalid state");
+        
+        shutdownReason = msg.getArg(0);
+        shutdownMessageId =
+                out(new Message("shutdown", new OtpErlangObject[]
+                    {
+                        shutdownReason,
+                    }));
+    }
+
     public void handleReply(Reply reply) throws ErleenException, OtpErlangExit
     {
-        // Get previously stored request
-        Message msg = getTweetsCalls.remove(reply.getMessageId());
-
-        // Build up list of all tweets the user is following
-        List<OtpErlangObject> followingTweets =
-                new ArrayList<OtpErlangObject>();
-        OtpErlangList followingList = (OtpErlangList) reply.getReply();
-        OtpErlangObject[] followingListArray = followingList.elements();
-        for(int i = 0; i < followingListArray.length; i++)
+        if (reply.getMessageId().equals(shutdownMessageId))
         {
-            String user = followingListArray[i].toString();
-            followingTweets.addAll(tweets.get(user));
+            throw new Shutdown(shutdownReason);
         }
+        else
+        {
+            // Get previously stored request
+            Message msg = getTweetsCalls.remove(reply.getMessageId());
 
-        // Reply with the tweets from all the users we are following
-        OtpErlangObject[] followingTweetsArray =
-                (OtpErlangObject[]) followingTweets.toArray();
-        reply(msg, new OtpErlangList(followingTweetsArray));
+            // Build up list of all tweets the user is following
+            List<OtpErlangObject> followingTweets =
+                    new ArrayList<OtpErlangObject>();
+            OtpErlangList followingList = (OtpErlangList) reply.getReply();
+            OtpErlangObject[] followingListArray = followingList.elements();
+            for(int i = 0; i < followingListArray.length; i++)
+            {
+                String user = followingListArray[i].toString();
+                followingTweets.addAll(tweets.get(user));
+            }
+
+            // Reply with the tweets from all the users we are following
+            OtpErlangObject[] followingTweetsArray =
+                    (OtpErlangObject[]) followingTweets.toArray();
+            reply(msg, new OtpErlangList(followingTweetsArray));
+        }
     }
 
     public ChildExitAction handleChildExit(String componentName,

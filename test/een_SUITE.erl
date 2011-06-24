@@ -10,8 +10,14 @@
 t1_test_() ->
     {timeout, 60, repeat(fun t1/0, 100)}.
 
+t1_java_test_() ->
+    {timeout, 120, repeat(fun t1_java/0, 100)}.
+
 t2_test_() ->
     {timeout, 60, repeat(fun t2/0, 100)}.
+
+t2_java_test_() ->
+    {timeout, 120, repeat(fun t2_java/0, 100)}.
 
 t3_test_() ->
     {timeout, 60, repeat(fun t3/0, 100)}.
@@ -25,17 +31,32 @@ t5_test_() ->
 t6_test_() ->
     {timeout, 60, repeat(fun t6/0, 100)}.
 
+t6_java_test_() ->
+    {timeout, 120, repeat(fun t6_java/0, 100)}.
+
 t7_test_() ->
     {timeout, 60, repeat(fun t7/0, 100)}.
+
+t7_java_test_() ->
+    {timeout, 120, repeat(fun t7_java/0, 100)}.
 
 t8_test_() ->
     {timeout, 60, repeat(fun t8/0, 100)}.
 
+t8_java_test_() ->
+    {timeout, 120, repeat(fun t8_java/0, 100)}.
+
 t9_test_() ->
     {timeout, 60, repeat(fun t9/0, 100)}.
 
+t9_java_test_() ->
+    {timeout, 120, repeat(fun t9_java/0, 100)}.
+
 t10_test_() ->
     {timeout, 60, repeat(fun t10/0, 10)}.
+
+t10_java_test_() ->
+    {timeout, 120, repeat(fun t10_java/0, 10)}.
 
 t1() ->
     Config =
@@ -61,7 +82,7 @@ t1() ->
     receive pong_out -> ok end.
 
 t1_java() ->
-    run_java(),
+    await_and_run_java(),
     Config =
         {#een_component_spec{id = top,
                              module = t1_top,
@@ -85,7 +106,7 @@ t1_java() ->
     receive pong_out -> ok end.
 
 t2() ->
-    Config =
+        Config =
         {#een_component_spec{id = top,
                              module = t2_top,
                              args = [self(), 6],
@@ -135,7 +156,7 @@ t2() ->
                                               args = [3],
                                               node = make_node(w1)},
                           #een_children_config{}},
-                         
+
                          {#een_component_spec{id = a2,
                                               module = t2_a,
                                               args = [1],
@@ -169,6 +190,245 @@ t2() ->
                                               module = t2_a,
                                               args = [7],
                                               node = make_node(w2)},
+                          #een_children_config{}},
+                         {#een_component_spec{id = b31,
+                                              module = t2_b,
+                                              node = make_node(w3)},
+                          #een_children_config{}},
+                         {#een_component_spec{id = b32,
+                                              module = t2_b,
+                                              node = make_node(w4)},
+                          #een_children_config{}},
+                         {#een_component_spec{id = b33,
+                                              module = t2_b,
+                                              node = make_node(w5)},
+                          #een_children_config{}},
+                         {#een_component_spec{id = b34,
+                                              module = t2_b,
+                                              node = make_node(w3)},
+                          #een_children_config{}},
+                         {#een_component_spec{id = b35,
+                                              module = t2_b,
+                                              node = make_node(w4)},
+                          #een_children_config{}},
+                         {#een_component_spec{id = b36,
+                                              module = t2_b,
+                                              node = make_node(w5)},
+                          #een_children_config{}},
+                         {#een_component_spec{id = b37,
+                                              module = t2_b,
+                                              node = make_node(w5)},
+                          #een_children_config{}},
+                         {#een_component_spec{id = c3,
+                                              module = t2_c,
+                                              args = [7],
+                                              node = make_node(w1)},
+                          #een_children_config{}},
+                         {#een_component_spec{id = e3,
+                                              module = t2_e,
+                                              args = [7],
+                                              node = make_node(w2)},
+                          #een_children_config{}},
+                         {#een_component_spec{id = f31,
+                                              module = t2_f,
+                                              node = make_node(w3)},
+                          #een_children_config{}},
+                         {#een_component_spec{id = f32,
+                                              module = t2_f,
+                                              node = make_node(w4)},
+                          #een_children_config{}},
+                         {#een_component_spec{id = f33,
+                                              module = t2_f,
+                                              node = make_node(w5)},
+                          #een_children_config{}},
+                         {#een_component_spec{id = f34,
+                                              module = t2_f,
+                                              node = make_node(w3)},
+                          #een_children_config{}},
+                         {#een_component_spec{id = f35,
+                                              module = t2_f,
+                                              node = make_node(w4)},
+                          #een_children_config{}},
+                         {#een_component_spec{id = f36,
+                                              module = t2_f,
+                                              node = make_node(w5)},
+                          #een_children_config{}},
+                         {#een_component_spec{id = f37,
+                                              module = t2_f,
+                                              node = make_node(w5)},
+                          #een_children_config{}},
+                         {#een_component_spec{id = g3,
+                                              module = t2_g,
+                                              args = [7],
+                                              node = make_node(w1)},
+                          #een_children_config{}}],
+             bindings = [{{top, ping_top}, {a1, ping_a}},
+                         {{top, ping_top}, {e1, ping_e}},
+                         {{a1, ping_a}, {b11, ping_b}},
+                         {{a1, ping_a}, {b12, ping_b}},
+                         {{a1, ping_a}, {b13, ping_b}},
+                         {{b11, ping_b}, {c1, ping_c}},
+                         {{b12, ping_b}, {c1, ping_c}},
+                         {{b13, ping_b}, {c1, ping_c}},
+                         {{c1, pong_c}, {b11, pong_b}},
+                         {{c1, pong_c}, {b12, pong_b}},
+                         {{c1, pong_c}, {b13, pong_b}},
+                         {{c1, pong_c}, {top, pong_top}},
+                         {{e1, ping_e}, {f11, ping_f}},
+                         {{e1, ping_e}, {f12, ping_f}},
+                         {{e1, ping_e}, {f13, ping_f}},
+                         {{f11, pong_f}, {e1, pong_e}},
+                         {{f12, pong_f}, {e1, pong_e}},
+                         {{f13, pong_f}, {e1, pong_e}},
+                         {{f11, ping_f}, {g1, ping_g}},
+                         {{f12, ping_f}, {g1, ping_g}},
+                         {{f13, ping_f}, {g1, ping_g}},
+                         {{g1, pong_g}, {top, pong_top}},
+
+                         {{top, ping_top}, {a2, ping_a}},
+                         {{top, ping_top}, {e2, ping_e}},
+                         {{a2, ping_a}, {b21, ping_b}},
+                         {{b21, ping_b}, {c2, ping_c}},
+                         {{c2, pong_c}, {b21, pong_b}},
+                         {{c2, pong_c}, {top, pong_top}},
+                         {{e2, ping_e}, {f21, ping_f}},
+                         {{f21, pong_f}, {e2, pong_e}},
+                         {{f21, ping_f}, {g2, ping_g}},
+                         {{g2, pong_g}, {top, pong_top}},
+
+                         {{top, ping_top}, {a3, ping_a}},
+                         {{top, ping_top}, {e3, ping_e}},
+                         {{a3, ping_a}, {b31, ping_b}},
+                         {{a3, ping_a}, {b32, ping_b}},
+                         {{a3, ping_a}, {b33, ping_b}},
+                         {{a3, ping_a}, {b34, ping_b}},
+                         {{a3, ping_a}, {b35, ping_b}},
+                         {{a3, ping_a}, {b36, ping_b}},
+                         {{a3, ping_a}, {b37, ping_b}},
+                         {{b31, ping_b}, {c3, ping_c}},
+                         {{b32, ping_b}, {c3, ping_c}},
+                         {{b33, ping_b}, {c3, ping_c}},
+                         {{b34, ping_b}, {c3, ping_c}},
+                         {{b35, ping_b}, {c3, ping_c}},
+                         {{b36, ping_b}, {c3, ping_c}},
+                         {{b37, ping_b}, {c3, ping_c}},
+                         {{c3, pong_c}, {b31, pong_b}},
+                         {{c3, pong_c}, {b32, pong_b}},
+                         {{c3, pong_c}, {b33, pong_b}},
+                         {{c3, pong_c}, {b34, pong_b}},
+                         {{c3, pong_c}, {b35, pong_b}},
+                         {{c3, pong_c}, {b36, pong_b}},
+                         {{c3, pong_c}, {b37, pong_b}},
+                         {{c3, pong_c}, {top, pong_top}},
+                         {{e3, ping_e}, {f31, ping_f}},
+                         {{e3, ping_e}, {f32, ping_f}},
+                         {{e3, ping_e}, {f33, ping_f}},
+                         {{e3, ping_e}, {f34, ping_f}},
+                         {{e3, ping_e}, {f35, ping_f}},
+                         {{e3, ping_e}, {f36, ping_f}},
+                         {{e3, ping_e}, {f37, ping_f}},
+                         {{f31, pong_f}, {e3, pong_e}},
+                         {{f32, pong_f}, {e3, pong_e}},
+                         {{f33, pong_f}, {e3, pong_e}},
+                         {{f34, pong_f}, {e3, pong_e}},
+                         {{f35, pong_f}, {e3, pong_e}},
+                         {{f36, pong_f}, {e3, pong_e}},
+                         {{f37, pong_f}, {e3, pong_e}},
+                         {{f31, ping_f}, {g3, ping_g}},
+                         {{f32, ping_f}, {g3, ping_g}},
+                         {{f33, ping_f}, {g3, ping_g}},
+                         {{f34, ping_f}, {g3, ping_g}},
+                         {{f35, ping_f}, {g3, ping_g}},
+                         {{f36, ping_f}, {g3, ping_g}},
+                         {{f37, ping_f}, {g3, ping_g}},
+                         {{g3, pong_g}, {top, pong_top}}]}},
+    {ok, Top} = een:spawn_config(Config),
+    een_gen:cast(Top, {msg, ping_in, {undefined, undefined}, {}}), %% Fake
+    receive pong_out -> ok end.
+
+t2_java() ->
+    await_and_run_java(),
+    Config =
+        {#een_component_spec{id = top,
+                             module = t2_top,
+                             args = [self(), 6],
+                             node = make_node(w1)},
+         #een_children_config{
+             children = [{#een_component_spec{id = a1,
+                                              module = een_java,
+                                              args = [make_node(een_java), "com.erleen.samples.T2A", [{3}]]},
+                          #een_children_config{}},
+                         {#een_component_spec{id = b11,
+                                              module = t2_b,
+                                              node = make_node(w3)},
+                          #een_children_config{}},
+                         {#een_component_spec{id = b12,
+                                              module = t2_b,
+                                              node = make_node(w4)},
+                          #een_children_config{}},
+                         {#een_component_spec{id = b13,
+                                              module = t2_b,
+                                              node = make_node(w5)},
+                          #een_children_config{}},
+                         {#een_component_spec{id = c1,
+                                              module = t2_c,
+                                              args = [3],
+                                              node = make_node(w1)},
+                          #een_children_config{}},
+                         {#een_component_spec{id = e1,
+                                              module = t2_e,
+                                              args = [3],
+                                              node = make_node(w2)},
+                          #een_children_config{}},
+                         {#een_component_spec{id = f11,
+                                              module = t2_f,
+                                              node = make_node(w3)},
+                          #een_children_config{}},
+                         {#een_component_spec{id = f12,
+                                              module = t2_f,
+                                              node = make_node(w4)},
+                          #een_children_config{}},
+                         {#een_component_spec{id = f13,
+                                              module = t2_f,
+                                              node = make_node(w5)},
+                          #een_children_config{}},
+                         {#een_component_spec{id = g1,
+                                              module = t2_g,
+                                              args = [3],
+                                              node = make_node(w1)},
+                          #een_children_config{}},
+                         
+                         {#een_component_spec{id = a2,
+                                              module = een_java,
+                                              args = [make_node(een_java), "com.erleen.samples.T2A", [{1}]]},
+                          #een_children_config{}},
+                         {#een_component_spec{id = b21,
+                                              module = t2_b,
+                                              node = make_node(w3)},
+                          #een_children_config{}},
+                         {#een_component_spec{id = c2,
+                                              module = t2_c,
+                                              args = [1],
+                                              node = make_node(w1)},
+                          #een_children_config{}},
+                         {#een_component_spec{id = e2,
+                                              module = t2_e,
+                                              args = [1],
+                                              node = make_node(w2)},
+                          #een_children_config{}},
+                         {#een_component_spec{id = f21,
+                                              module = t2_f,
+                                              node = make_node(w3)},
+                          #een_children_config{}},
+                         {#een_component_spec{id = g2,
+                                              module = t2_g,
+                                              args = [1],
+                                              node = make_node(w1)},
+                          #een_children_config{}},
+
+                         {#een_component_spec{id = a3,
+                                              module = een_java,
+                                              args = [make_node(een_java), "com.erleen.samples.T2A", [{7}]]},
                           #een_children_config{}},
                          {#een_component_spec{id = b31,
                                               module = t2_b,
@@ -586,15 +846,35 @@ t6() ->
     twt2:reconfig(Top),
     een:shutdown(Top).
 
+t6_java() ->
+    await_and_run_java(),
+    {ok, Top} = twt:start_java(),
+    twt2:reconfig_java(Top),
+    een:shutdown(Top).
+
 t7() ->
     {ok, Top} = twt:start(),
     erlang:yield(),
     twt2:reconfig(Top),
     een:shutdown(Top).
 
+t7_java() ->
+    await_and_run_java(),
+    {ok, Top} = twt:start_java(),
+    erlang:yield(),
+    twt2:reconfig_java(Top),
+    een:shutdown(Top).
+
 t8() ->
     {ok, Top} = twt:start(),
     twt2:reconfig(Top),
+    erlang:yield(),
+    een:shutdown(Top).
+
+t8_java() ->
+    await_and_run_java(),
+    {ok, Top} = twt:start_java(),
+    twt2:reconfig_java(Top),
     erlang:yield(),
     een:shutdown(Top).
 
@@ -605,6 +885,14 @@ t9() ->
     erlang:yield(),
     een:shutdown(Top).
 
+t9_java() ->
+    await_and_run_java(),
+    {ok, Top} = twt:start_java(),
+    erlang:yield(),
+    twt2:reconfig_java(Top),
+    erlang:yield(),
+    een:shutdown(Top).
+
 t10() ->
     {ok, Top} = twt:start(),
     timer:sleep(1000),
@@ -612,16 +900,40 @@ t10() ->
     timer:sleep(1000),
     een:shutdown(Top).
 
+t10_java() ->
+    await_and_run_java(),
+    {ok, Top} = twt:start_java(),
+    timer:sleep(1000),
+    twt2:reconfig_java(Top),
+    timer:sleep(1000),
+    een:shutdown(Top).
+
 run_java() ->
     een_java_server:start(),
-    %%io:format("Starting Erjeen...~n"),
-    %%spawn(fun () -> Output = os:cmd("java -jar java/erleen/dist/erleen.jar"),
-    %%                io:format("Erjeen finished. Output:~n~n~s~n", [Output])
-    %%      end),
+    io:format("Starting Erjeen...~n"),
+    spawn_link(fun () -> Output = os:cmd("java -jar ../java/erleen/dist/erleen.jar"),
+                         io:format("Erjeen finished. Output:~n~n~s~n", [Output])
+          end),
+    await_java().
+
+await_java() ->
+    een_java_server:start(),
     io:format("Awaiting connection from Erjeen...~n"),
     een_java_server:wait_connection(make_node(een_java)),
     io:format("Erjeen connected~n"),
     ok.
+
+await_and_run_java() ->
+    Parent = self(),
+    spawn_link(fun () -> await_java(),
+                         Parent ! connected
+               end),
+    receive
+        connected -> ok
+    after 2000 ->
+            run_java(),
+            receive connected -> ok end
+    end.
 
 repeat(Fun, Times) ->
     fun () -> [Fun() || _ <- lists:seq(1, Times)] end.

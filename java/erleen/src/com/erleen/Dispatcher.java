@@ -19,7 +19,6 @@ import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.Map;
 import java.util.Queue;
-import java.util.concurrent.Exchanger;
 import java.util.concurrent.LinkedBlockingDeque;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
@@ -384,17 +383,39 @@ public class Dispatcher
                 OtpErlangObject msgTupleOrList = req.args[1];
                 OtpErlangObject from = req.args[2];
 
-                component.handleIn(new Message(port, msgTupleOrList, from));
-                reply(new OtpErlangAtom("ok"));
+                try
+                {
+                    component.handleIn(new Message(port, msgTupleOrList, from));
+                    reply(new OtpErlangAtom("ok"));
+                }
+                catch (Shutdown sh)
+                {
+                    reply(new OtpErlangTuple(new OtpErlangObject[]
+                            {
+                                new OtpErlangAtom("shutdown"),
+                                sh.getReason(),
+                            }));
+                }
             }
             else if (req.function.equals("handle_reply") && req.args.length == 2)
             {
                 OtpErlangRef msgId = (OtpErlangRef) req.args[0];
                 OtpErlangObject replyTupleOrList = req.args[1];
 
-                component.handleReply(
-                        new Reply(new MessageId(msgId), replyTupleOrList));
-                reply(new OtpErlangAtom("ok"));
+                try
+                {
+                    component.handleReply(
+                            new Reply(new MessageId(msgId), replyTupleOrList));
+                    reply(new OtpErlangAtom("ok"));
+                }
+                catch (Shutdown sh)
+                {
+                    reply(new OtpErlangTuple(new OtpErlangObject[]
+                            {
+                                new OtpErlangAtom("shutdown"),
+                                sh.getReason(),
+                            }));
+                }
             }
             else if (req.function.equals("handle_child_exit") && req.args.length == 2)
             {
@@ -443,27 +464,18 @@ public class Dispatcher
                     
                     try
                     {
-                        // @#
-                        System.out.println("Receive");
                         if (selfReply.receive(0) != null)
                             throw new ErleenException("Unexpected message");
                     }
                     catch (OtpErlangExit ex)
                     {
-                        // @#
-                        System.out.println("EXIT!!! " + ex.toString() + " pid: " + ex.pid().toString());
-
                         ex.printStackTrace();
                         if (ex.pid() == null)
                         {
-                            // @#
-                            System.out.println("UHM WHATTTT !?????");
                             throw new ErleenException(ex);
                         }
                         else
                         {
-                            // @#
-                            System.out.println("KILLING IT!! and repeat");
                             killComponent(ex.pid());
                             repeat = true;
                         }
@@ -476,7 +488,6 @@ public class Dispatcher
                 }
                 while (repeat);
 
-                System.out.println("Finally send...");
                 selfReply.send(pid, replyTuple);
             }
         }
