@@ -588,6 +588,16 @@ t10() ->
     timer:sleep(1000),
     een:shutdown(Top).
 
+run_java() ->
+    een_java_server:start(),
+    io:format("Starting Erjeen...~n"),
+    spawn(fun () -> Output = os:cmd("java -jar java/erleen/dist/erleen.jar"),
+                    io:format("Erjeen finished. Output:~n~n~s~n", [Output])
+          end),
+    een_java_server:wait_connection(make_node(een_java)),
+    io:format("Erjeen connected~n"),
+    ok.
+
 repeat(Fun, Times) ->
     fun () -> [Fun() || _ <- lists:seq(1, Times)] end.
 

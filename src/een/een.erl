@@ -46,7 +46,7 @@ shutdown(Top, Reason) ->
                 {'EXIT', Top, {shutdown, Reason}} ->
                     process_flag(trap_exit, TrapExit),
                     Reason;
-                {'EXIT', OtherPid, Reason} ->
+                {'EXIT', _OtherPid, Reason} ->
                     exit(Reason)
             end
     end.

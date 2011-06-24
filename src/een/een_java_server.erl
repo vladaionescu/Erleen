@@ -35,12 +35,14 @@ init([]) ->
 
 handle_call({register_java_node, Pid}, _From,
             State = #state{java_nodes = JN, waits = Waits}) ->
-    erlang:monitor(process, Pid),
+    erlang:monitor_node(node(Pid), true),
+    io:format("~p on ~p: Java node ~p:~p connected.~n",
+              [?MODULE, node(), node(Pid), Pid]),
     State1 =
         case orddict:find(node(Pid), Waits) of
             {ok, WaitFrom} -> gen_server:reply(WaitFrom, ok),
-                          State#state{waits = orddict:erase(node(Pid), Waits)};
-            error      -> State
+                              State#state{waits = orddict:erase(node(Pid), Waits)};
+            error          -> State
         end,
     {reply, ok, State1#state{java_nodes = orddict:store(node(Pid), Pid, JN)}};
 handle_call({get_java_pid, Node}, _From, State = #state{java_nodes = JN}) ->
@@ -49,15 +51,15 @@ handle_call({wait_connection, Node}, From, State = #state{waits = Waits,
                                                           java_nodes = JN}) ->
     case orddict:find(Node, JN) of
         {ok, _} -> {reply, ok, State};
-        error   -> {noreply, State#state{waits = orddict:store(Node, From)}}
+        error   -> NewWaits = orddict:store(Node, From, Waits),
+                   {noreply, State#state{waits = NewWaits}}
     end.
 
 handle_cast(_, _) ->
     unexpected.
 
-handle_info({'DOWN', _, process, Pid, Reason},
-            State = #state{java_nodes = JN}) ->
-    {noreply, State#state{java_nodes = orddict:erase(node(Pid), JN)}}.
+handle_info({nodedown, Node}, State = #state{java_nodes = JN}) ->
+    {noreply, State#state{java_nodes = orddict:erase(Node, JN)}}.
 
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.

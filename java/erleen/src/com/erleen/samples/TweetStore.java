@@ -89,7 +89,7 @@ public class TweetStore extends Component
         }
 
         // Reply ok
-        getDispatcher().reply(this, msg.getFrom(), new OtpErlangAtom("ok"));
+        reply(msg, new OtpErlangAtom("ok"));
     }
 
     private void handleGetFollowedTweets(Message msg)
@@ -102,7 +102,7 @@ public class TweetStore extends Component
         Message querryFollow =
                 new Message("query_follow",
                     new OtpErlangObject[] {new OtpErlangString(user)});
-        MessageId querryFollowMsgId = getDispatcher().out(this, querryFollow);
+        MessageId querryFollowMsgId = out(querryFollow);
 
         // Store request
         getTweetsCalls.put(querryFollowMsgId, msg);
@@ -127,8 +127,7 @@ public class TweetStore extends Component
         // Reply with the tweets from all the users we are following
         OtpErlangObject[] followingTweetsArray =
                 (OtpErlangObject[]) followingTweets.toArray();
-        getDispatcher().reply(this, msg.getFrom(),
-                new OtpErlangList(followingTweetsArray));
+        reply(msg, new OtpErlangList(followingTweetsArray));
     }
 
     public ChildExitAction handleChildExit(String componentName,

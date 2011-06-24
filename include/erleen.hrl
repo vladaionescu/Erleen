@@ -3,7 +3,7 @@
                              type, %% ?
                              module,
                              args = [],
-                             node,
+                             node = node(),
                              version = new %% new | changed | removed | unchanged
                             }).
 -record(een_children_config, {children = [],
