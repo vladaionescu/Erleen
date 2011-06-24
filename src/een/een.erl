@@ -19,9 +19,11 @@ out(PortName, Msg) ->
     een_out:send(PortName, Msg).
 
 reply(FromList, Msg) when is_list(FromList) ->
-    lists:foreach(fun (From) -> reply(From, Msg) end, FromList);
+    lists:foreach(fun (From) -> reply(From, Msg) end, FromList),
+    ok;
 reply(From, Msg) ->
-    een_gen:reply(From, Msg).
+    een_gen:reply(From, Msg),
+    ok.
 
 report(Format, Args) ->
     io:format("(~p:~p) $ " ++ Format, [get('$een_component_id'), self()] ++ Args).

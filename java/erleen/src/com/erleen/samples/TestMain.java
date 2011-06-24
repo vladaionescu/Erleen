@@ -7,11 +7,24 @@ import java.io.IOException;
 
 public class TestMain
 {
-    public static void main(String[] args) throws IOException, ErleenException
+    public static void main(String[] args)
     {
         System.out.println("Attempting connection to Erleen...");
-        Dispatcher disp =
-                new Dispatcher("een_java", "een", "KQQGRUUVFWOECMSFLUPL");
-        disp.run();
+        Dispatcher disp;
+        try
+        {
+            disp = new Dispatcher("een_java", "een", "KQQGRUUVFWOECMSFLUPL");
+            disp.run();
+        }
+        catch (IOException ex)
+        {
+            ex.printStackTrace();
+        }
+        catch (ErleenException ex)
+        {
+            ex.printStackTrace();
+        }
+
+        System.exit(0);
     }
 }

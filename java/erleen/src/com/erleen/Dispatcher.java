@@ -2,8 +2,8 @@
 package com.erleen;
 
 import com.ericsson.otp.erlang.OtpAuthException;
-import com.ericsson.otp.erlang.OtpConnection;
 import com.ericsson.otp.erlang.OtpErlangAtom;
+import com.ericsson.otp.erlang.OtpErlangDecodeException;
 import com.ericsson.otp.erlang.OtpErlangExit;
 import com.ericsson.otp.erlang.OtpErlangList;
 import com.ericsson.otp.erlang.OtpErlangObject;
@@ -11,18 +11,18 @@ import com.ericsson.otp.erlang.OtpErlangPid;
 import com.ericsson.otp.erlang.OtpErlangRef;
 import com.ericsson.otp.erlang.OtpErlangString;
 import com.ericsson.otp.erlang.OtpErlangTuple;
-import com.ericsson.otp.erlang.OtpPeer;
-import com.ericsson.otp.erlang.OtpSelf;
+import com.ericsson.otp.erlang.OtpMbox;
+import com.ericsson.otp.erlang.OtpNode;
 import java.io.IOException;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.LinkedList;
 import java.util.Map;
+import java.util.Queue;
 import java.util.concurrent.Exchanger;
 import java.util.concurrent.LinkedBlockingDeque;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
-import java.util.logging.Level;
-import java.util.logging.Logger;
 
 public class Dispatcher
 {
@@ -31,19 +31,20 @@ public class Dispatcher
     private final long THREAD_KEEP_ALIVE_TIME = 5;
     private final TimeUnit THREAD_KEEP_ALIVE_TIME_UNIT = TimeUnit.MINUTES;
 
-    private final OtpSelf self;
-    private final OtpPeer erleen;
-    private final Object connectionLock = new Object();
-    private OtpConnection connection = null;
+    private final String erleenNode;
+    private final OtpNode node;
+
+    private OtpMbox self = null;
+    private final Object replyLock = new Object();
+    private OtpMbox selfReply = null;
+    private final Object rpcLock = new Object();
+    private OtpMbox selfRpc = null;
+
+    private final Object debugLock = new Object();
 
     private final Map<OtpErlangPid, Component> mapComponents =
             Collections.synchronizedMap(new HashMap<OtpErlangPid, Component>());
 
-    private Map<OtpErlangPid, BlockingRpc> rpcMap =
-            Collections.synchronizedMap(
-                new HashMap<OtpErlangPid, BlockingRpc>());
-
-    private Thread receiverThread = null;
     private ThreadPoolExecutor requestsExecutor =
             new ThreadPoolExecutor(
                 THREAD_POOL_SIZE,
@@ -52,27 +53,53 @@ public class Dispatcher
                 THREAD_KEEP_ALIVE_TIME_UNIT,
                 new LinkedBlockingDeque<Runnable>());
 
-    public Dispatcher(String nodeName, String erleenNodeName, String cookie)
+    private final Map<OtpErlangPid, Request> mapRequests =
+            new HashMap<OtpErlangPid, Request>();
+
+    public Dispatcher(String nodeName, String erleenNode, String cookie)
             throws IOException
     {
-        self = new OtpSelf(nodeName, cookie);
-        erleen = new OtpPeer(erleenNodeName);
+        this.erleenNode = erleenNode;
+        this.node = new OtpNode(nodeName, cookie);
+    }
+
+    private OtpErlangObject erlangRpc(String module, String function,
+            OtpErlangObject[] args)
+            throws OtpErlangExit, OtpErlangDecodeException
+    {
+        OtpErlangObject msg =
+                new OtpErlangTuple(new OtpErlangObject[]
+                {
+                    self.self(),
+                    new OtpErlangTuple(new OtpErlangObject[]
+                    {
+                        new OtpErlangAtom("call"),
+                        new OtpErlangAtom(module),
+                        new OtpErlangAtom(function),
+                        new OtpErlangList(args),
+                        new OtpErlangAtom("user"),
+                    }),
+                });
+        self.send("rex", erleenNode, msg);
+        OtpErlangObject[] replyTuple = ((OtpErlangTuple) self.receive()).elements();
+        return replyTuple[1];
     }
 
     public void run() throws ErleenException
     {
-        if (connection != null)
-            return;
-
         try
         {
-            connection = self.connect(erleen);
+            if(!node.ping(erleenNode, 10000))
+                throw new ErleenException("Did not receive pong");
+
+            self = node.createMbox();
+            selfReply = node.createMbox();
+            selfRpc = node.createMbox();
 
             // Register Java node
-            OtpErlangObject[] registerArgs = new OtpErlangObject[] {self.pid()};
-            connection.sendRPC(
+            OtpErlangObject[] registerArgs = new OtpErlangObject[] {self.self()};
+            OtpErlangObject registerReply = erlangRpc(
                     "een_java_server", "register_java_node", registerArgs);
-            OtpErlangObject registerReply = connection.receiveRPC();
             if (!(registerReply instanceof OtpErlangAtom &&
                     ((OtpErlangAtom) registerReply).atomValue().equals("ok")))
                 throw new ErleenException("Unable to register java node");
@@ -82,20 +109,24 @@ public class Dispatcher
                 dispatch();
             }
         }
-        catch (IOException ex)
-        {
-            throw new ErleenException(ex);
-        }
         catch (OtpAuthException ex)
         {
+            ex.printStackTrace();
             throw new ErleenException(ex);
         }
         catch (OtpErlangExit ex)
         {
+            ex.printStackTrace();
             throw new ErleenException(ex);
         }
         catch (InterruptedException ex)
         {
+            ex.printStackTrace();
+            throw new ErleenException(ex);
+        }
+        catch (OtpErlangDecodeException ex)
+        {
+            ex.printStackTrace();
             throw new ErleenException(ex);
         }
     }
@@ -109,7 +140,7 @@ public class Dispatcher
             {
                 new OtpErlangAtom("$een_java"),
                 new OtpErlangAtom("rpc"),
-                self.pid(),
+                selfRpc.self(),
                 new OtpErlangTuple(new OtpErlangObject[]
                 {
                     new OtpErlangAtom(module),
@@ -117,48 +148,61 @@ public class Dispatcher
                     args,
                 }),
             });
-        OtpErlangObject[] replyTuple;
         try
         {
-            BlockingRpc pendingRpc = new BlockingRpc();
-            rpcMap.put(pid, pendingRpc);
-            
-            synchronized (connectionLock)
+            OtpErlangObject reply;
+            synchronized (rpcLock)
             {
-                connection.send(pid, rpc);
+                selfRpc.link(pid);
+                selfRpc.send(pid, rpc);
+                reply = selfRpc.receive();
+                selfRpc.unlink(pid);
             }
 
-            if (pendingRpc.get() == null)
-                throw new ErleenException("Counterpart died");
+            OtpErlangObject[] rpcTuple = ((OtpErlangTuple) reply).elements();
+            if (rpcTuple.length != 4)
+                throw new ErleenException("Received invalid message");
+            String identifierAtom = ((OtpErlangAtom) rpcTuple[0]).atomValue();
+            if (!identifierAtom.equals("$een_java"))
+                throw new ErleenException("Received invalid message");
 
-            return pendingRpc.get();
+            //OtpErlangPid pid = (OtpErlangPid) rpcTuple[1];
+            //String componentId = ((OtpErlangAtom) rpcTuple[2]).atomValue();
+
+            OtpErlangObject[] requestTuple =
+                ((OtpErlangTuple) rpcTuple[3]).elements();
+
+            if (!(requestTuple.length == 2 &&
+                ((OtpErlangAtom) requestTuple[0]).atomValue().equals("rpc_reply")))
+            {
+                throw new ErleenException("Unexpected message");
+            }
+
+            return requestTuple[1];
         }
-        catch (IOException e)
+        catch (OtpErlangDecodeException e)
         {
+            e.printStackTrace();
             throw new ErleenException(e);
         }
-        catch (InterruptedException e)
+        catch (OtpErlangExit e)
         {
-            throw new ErleenException(e);
+            e.printStackTrace();
+            if (e.pid().equals(pid))
+            {
+                throw new ErleenException(e);
+            }
+            else
+            {
+                killComponent(e.pid());
+                throw new ErleenException(e);
+            }
         }
     }
 
     private void killComponent(OtpErlangPid pid)
     {
         mapComponents.remove(pid);
-
-        BlockingRpc pendingRpc = rpcMap.get(pid);
-        if (pendingRpc != null)
-        {
-            try
-            {
-                pendingRpc.set(null);
-            }
-            catch (InterruptedException ex1)
-            {
-                Logger.getLogger(Dispatcher.class.getName()).log(Level.SEVERE, null, ex1);
-            }
-        }
     }
 
     private void killComponent(OtpErlangPid pid, Throwable ex)
@@ -170,82 +214,139 @@ public class Dispatcher
                     new OtpErlangString(ex.toString()),
                     new OtpErlangString(ex.getStackTrace().toString()),
                 });
-        try
+
+        synchronized (replyLock)
         {
-            synchronized (connectionLock)
-            {
-                connection.send(pid, death);
-            }
-        }
-        catch (IOException ex1)
-        {
-            Logger.getLogger(Dispatcher.class.getName()).log(Level.SEVERE, null, ex1);
+            selfReply.send(pid, death);
         }
 
         killComponent(pid);
+    }
+
+    private static class RequestBit
+    {
+        public final String function;
+        public final OtpErlangObject[] args;
+
+        public RequestBit(String function, OtpErlangList args)
+        {
+            this.function = function;
+            this.args = args.elements();
+        }
     }
 
     private class Request implements Runnable
     {
         public final OtpErlangPid pid;
         public final String componentId;
-        public final String function;
-        public final OtpErlangObject[] args;
+        public final Queue<RequestBit> requestBits =
+                new LinkedList<RequestBit>();
+        public final Dispatcher dispatcher;
 
-        Request(OtpErlangPid pid, String componentId, String function,
-                OtpErlangList args)
+        Request(OtpErlangPid pid, String componentId, Dispatcher dispatcher)
         {
             this.pid = pid;
             this.componentId = componentId;
-            this.function = function;
-            this.args = args.elements();
+            this.dispatcher = dispatcher;
+        }
+
+        public void addRequest(RequestBit req)
+        {
+            synchronized (mapRequests)
+            {
+                requestBits.offer(req);
+            }
+        }
+
+        private RequestBit takeRequest()
+        {
+            synchronized (mapRequests)
+            {
+                return requestBits.poll();
+            }
+        }
+
+        private boolean eliminate()
+        {
+            synchronized (mapRequests)
+            {
+                if (!requestBits.isEmpty())
+                    return false;
+
+                mapRequests.remove(pid);
+                return true;
+            }
         }
 
         public void run()
         {
             try
             {
-                handleRequest();
+                do
+                {
+                    RequestBit req = takeRequest();
+                    while (req != null)
+                    {
+                        handleRequest(req);
+                        req = takeRequest();
+                    }
+                }
+                while(!eliminate());
             }
             catch (ErleenException ex)
             {
+                ex.printStackTrace();
                 killComponent(pid, ex);
             }
             catch (OtpErlangExit ex)
             {
-                killComponent(ex.pid());
-            }
-            catch (IOException ex)
-            {
-                killComponent(pid, ex);
+                ex.printStackTrace();
+                if (ex.pid() == null)
+                    killComponent(pid, ex);
+                else
+                    killComponent(ex.pid(), ex);
             }
         }
 
-        private void handleRequest() throws ErleenException, IOException, OtpErlangExit
+        private void handleRequest(RequestBit req)
+                throws ErleenException, OtpErlangExit
         {
+            // @#
+            synchronized (debugLock)
+            {
+                System.out.println(
+                        pid.toString() + ": handling request fun: " +
+                        req.function + " args: " + req.args.toString());
+            }
+
             Component component = mapComponents.get(pid);
 
-            if (component == null && !function.equals("reinit"))
+            if (component == null && !req.function.equals("reinit"))
             {
-                // Component may have died. Ignore request
+                // Component may have died. Ignore reply
                 return;
             }
 
-            if (function.equals("reinit") && args.length == 4)
+            synchronized (replyLock)
+            {
+                selfReply.link(pid);
+            }
+
+            if (req.function.equals("reinit") && req.args.length == 4)
             {
                 String oldClass;
                 Component oldState = null; // TODO
-                if (args[0] instanceof OtpErlangAtom &&
-                        ((OtpErlangAtom) args[0]).atomValue().equals("none"))
+                if (req.args[0] instanceof OtpErlangAtom &&
+                        ((OtpErlangAtom) req.args[0]).atomValue().equals("none"))
                 {
                     oldClass = null;
                 }
                 else
                 {
-                    oldClass = ((OtpErlangString) args[0]).stringValue();
+                    oldClass = ((OtpErlangString) req.args[0]).stringValue();
                 }
-                String className = ((OtpErlangString) args[2]).stringValue();
-                OtpErlangObject[] params = ((OtpErlangList) args[3]).elements();
+                String className = ((OtpErlangString) req.args[2]).stringValue();
+                OtpErlangObject[] params = ((OtpErlangList) req.args[3]).elements();
 
                 try
                 {
@@ -254,78 +355,76 @@ public class Dispatcher
                 }
                 catch (ClassNotFoundException e)
                 {
+                    e.printStackTrace();
                     throw new ErleenException(e);
                 }
                 catch (IllegalAccessException e)
                 {
+                    e.printStackTrace();
                     throw new ErleenException(e);
                 }
                 catch (InstantiationException e)
                 {
+                    e.printStackTrace();
                     throw new ErleenException(e);
                 }
 
                 component.setComponentId(componentId);
                 component.setPid(pid);
+                component.setDispatcher(dispatcher);
                 mapComponents.put(pid, component);
-                try
-                {
-                    synchronized (connectionLock)
-                    {
-                        connection.link(pid);
-                    }
-                }
-                catch (IOException e)
-                {
-                    throw new ErleenException(e);
-                }
 
                 InterfaceSpec ifSpec = component.reinit(oldClass, oldState, params);
                 reply(new OtpErlangTuple(new OtpErlangObject[]
                         {new OtpErlangAtom("ok"), ifSpec.toErlang()}));
             }
-            else if (function.equals("handle_in") && args.length == 3)
+            else if (req.function.equals("handle_in") && req.args.length == 3)
             {
-                String port = ((OtpErlangAtom) args[0]).atomValue();
-                OtpErlangObject msgTupleOrList = args[1];
-                OtpErlangObject from = args[2];
+                String port = ((OtpErlangAtom) req.args[0]).atomValue();
+                OtpErlangObject msgTupleOrList = req.args[1];
+                OtpErlangObject from = req.args[2];
 
                 component.handleIn(new Message(port, msgTupleOrList, from));
                 reply(new OtpErlangAtom("ok"));
             }
-            else if (function.equals("handle_reply") && args.length == 2)
+            else if (req.function.equals("handle_reply") && req.args.length == 2)
             {
-                OtpErlangRef msgId = (OtpErlangRef) args[0];
-                OtpErlangObject replyTupleOrList = args[1];
+                OtpErlangRef msgId = (OtpErlangRef) req.args[0];
+                OtpErlangObject replyTupleOrList = req.args[1];
 
                 component.handleReply(
                         new Reply(new MessageId(msgId), replyTupleOrList));
                 reply(new OtpErlangAtom("ok"));
             }
-            else if (function.equals("handle_child_exit") && args.length == 2)
+            else if (req.function.equals("handle_child_exit") && req.args.length == 2)
             {
-                String child = ((OtpErlangAtom) args[0]).atomValue();
-                OtpErlangObject reason = args[1];
+                String child = ((OtpErlangAtom) req.args[0]).atomValue();
+                OtpErlangObject reason = req.args[1];
 
                 ChildExitAction cea =
                         component.handleChildExit(child, reason);
                 reply(cea.toErlang());
             }
-            else if (function.equals("terminate") && args.length == 1)
+            else if (req.function.equals("terminate") && req.args.length == 1)
             {
-                OtpErlangObject reason = args[0];
+                OtpErlangObject reason = req.args[0];
 
                 reply(component.terminate(reason));
             }
             else
             {
                 throw new UnsupportedOperationException(
-                        "Function " + function + "/" + args.length +
+                        "Function " + req.function + "/" + req.args.length +
                         " not implemented");
+            }
+
+            synchronized (replyLock)
+            {
+                selfReply.unlink(pid);
             }
         }
 
-        private void reply(OtpErlangObject reply) throws IOException
+        private void reply(OtpErlangObject reply) throws ErleenException
         {
             OtpErlangTuple replyTuple =
                 new OtpErlangTuple(new OtpErlangObject[]
@@ -334,22 +433,65 @@ public class Dispatcher
                     new OtpErlangAtom("reply"),
                     reply,
                 });
-            
-            synchronized (connectionLock)
+
+            synchronized (replyLock)
             {
-                connection.send(pid, replyTuple);
+                boolean repeat;
+                do
+                {
+                    repeat = false;
+                    
+                    try
+                    {
+                        // @#
+                        System.out.println("Receive");
+                        if (selfReply.receive(0) != null)
+                            throw new ErleenException("Unexpected message");
+                    }
+                    catch (OtpErlangExit ex)
+                    {
+                        // @#
+                        System.out.println("EXIT!!! " + ex.toString() + " pid: " + ex.pid().toString());
+
+                        ex.printStackTrace();
+                        if (ex.pid() == null)
+                        {
+                            // @#
+                            System.out.println("UHM WHATTTT !?????");
+                            throw new ErleenException(ex);
+                        }
+                        else
+                        {
+                            // @#
+                            System.out.println("KILLING IT!! and repeat");
+                            killComponent(ex.pid());
+                            repeat = true;
+                        }
+                    }
+                    catch (OtpErlangDecodeException ex)
+                    {
+                        ex.printStackTrace();
+                        throw new ErleenException(ex);
+                    }
+                }
+                while (repeat);
+
+                System.out.println("Finally send...");
+                selfReply.send(pid, replyTuple);
             }
         }
     }
 
-    private void dispatch() throws ErleenException, InterruptedException, IOException, OtpAuthException
+    private void dispatch() throws ErleenException, InterruptedException, OtpAuthException, OtpErlangDecodeException
     {
         try
         {
-            OtpErlangObject request;
-            synchronized (connectionLock)
+            OtpErlangObject request = self.receive();
+
+            // @#
+            synchronized (debugLock)
             {
-                request = connection.receive();
+                System.out.println("received: " + request.toString());
             }
 
             OtpErlangObject[] rpcTuple = ((OtpErlangTuple) request).elements();
@@ -367,20 +509,33 @@ public class Dispatcher
             if (requestTuple.length == 3 &&
                     ((OtpErlangAtom) requestTuple[0]).atomValue().equals("function"))
             {
-                String function = ((OtpErlangString) requestTuple[1]).stringValue();
+                String function = ((OtpErlangAtom) requestTuple[1]).atomValue();
                 OtpErlangList args = (OtpErlangList) requestTuple[2];
 
-                requestsExecutor.execute(
-                        new Request(pid, componentId, function, args));
-            }
-            else if (requestTuple.length == 2 &&
-                    ((OtpErlangAtom) requestTuple[0]).atomValue().equals("rpc_reply"))
-            {
-                BlockingRpc pendingRpc = rpcMap.get(pid);
-                if (pendingRpc == null)
-                    throw new ErleenException("Unexpected RPC reply");
+                // @#
+                synchronized (debugLock)
+                {
+                    System.out.println("Dispatching fun: " + function + " args: " + args.toString());
+                }
 
-                pendingRpc.set(requestTuple[1]);
+                synchronized (mapRequests)
+                {
+                    Request req = mapRequests.get(pid);
+                    RequestBit reqBit = new RequestBit(function, args);
+                    if (req == null)
+                    {
+                        req = new Request(pid, componentId, this);
+                        mapRequests.put(pid, req);
+
+                        req.addRequest(reqBit);
+
+                        requestsExecutor.execute(req);
+                    }
+                    else
+                    {
+                        req.addRequest(reqBit);
+                    }
+                }
             }
             else
             {
@@ -389,39 +544,8 @@ public class Dispatcher
         }
         catch (OtpErlangExit ex)
         {
-            killComponent(ex.pid());
-        }
-    }
-
-    private class BlockingRpc extends Exchanger<OtpErlangObject>
-    {
-        private OtpErlangObject val;
-        private boolean valSet = false;
-        private boolean set = false;
-        
-        BlockingRpc()
-        {
-            super();
-        }
-
-        synchronized void set(OtpErlangObject val) throws InterruptedException
-        {
-            if (!set)
-            {
-                exchange(val);
-                set = true;
-            }
-        }
-
-        OtpErlangObject get() throws InterruptedException
-        {
-            if (!valSet)
-            {
-                valSet = true;
-                val = exchange(null);
-            }
-            
-            return val;
+            ex.printStackTrace();
+            throw new ErleenException(ex);
         }
     }
 }

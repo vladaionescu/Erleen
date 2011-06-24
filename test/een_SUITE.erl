@@ -60,6 +60,30 @@ t1() ->
     een_gen:cast(Top, {msg, ping_in, {undefined, undefined}, {}}), %% Fake
     receive pong_out -> ok end.
 
+t1_java() ->
+    run_java(),
+    Config =
+        {#een_component_spec{id = top,
+                             module = t1_top,
+                             args = [self()],
+                             node = make_node(w1)},
+         #een_children_config{
+             children = [{#een_component_spec{id = a,
+                                              module = t1_a,
+                                              node = make_node(w2)},
+                          #een_children_config{}},
+                         {#een_component_spec{id = b,
+                                              module = een_java,
+                                              args = [make_node(een_java), "com.erleen.samples.T1B", []]},
+                          #een_children_config{}}],
+             bindings = [{{top, ping_top}, {a, ping_a}},
+                         {{a, ping_a}, {b, ping_b}},
+                         {{b, pong1_b}, {top, pong1_top}},
+                         {{b, pong2_b}, {a, pong2_a}}]}},
+    {ok, Top} = een:spawn_config(Config),
+    een_gen:cast(Top, {msg, ping_in, {undefined, undefined}, {}}), %% Fake
+    receive pong_out -> ok end.
+
 t2() ->
     Config =
         {#een_component_spec{id = top,
@@ -590,10 +614,11 @@ t10() ->
 
 run_java() ->
     een_java_server:start(),
-    io:format("Starting Erjeen...~n"),
-    spawn(fun () -> Output = os:cmd("java -jar java/erleen/dist/erleen.jar"),
-                    io:format("Erjeen finished. Output:~n~n~s~n", [Output])
-          end),
+    %%io:format("Starting Erjeen...~n"),
+    %%spawn(fun () -> Output = os:cmd("java -jar java/erleen/dist/erleen.jar"),
+    %%                io:format("Erjeen finished. Output:~n~n~s~n", [Output])
+    %%      end),
+    io:format("Awaiting connection from Erjeen...~n"),
     een_java_server:wait_connection(make_node(een_java)),
     io:format("Erjeen connected~n"),
     ok.

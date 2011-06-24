@@ -31,11 +31,13 @@ wait_connection(JavaNode) ->
 %% ----------------------------------------------------------------------------
 
 init([]) ->
+    process_flag(trap_exit, true),
     {ok, #state{}}.
 
 handle_call({register_java_node, Pid}, _From,
             State = #state{java_nodes = JN, waits = Waits}) ->
     erlang:monitor_node(node(Pid), true),
+    link(Pid),
     io:format("~p on ~p: Java node ~p:~p connected.~n",
               [?MODULE, node(), node(Pid), Pid]),
     State1 =
@@ -58,11 +60,18 @@ handle_call({wait_connection, Node}, From, State = #state{waits = Waits,
 handle_cast(_, _) ->
     unexpected.
 
-handle_info({nodedown, Node}, State = #state{java_nodes = JN}) ->
-    {noreply, State#state{java_nodes = orddict:erase(Node, JN)}}.
+handle_info({nodedown, Node}, State) ->
+    unregister(Node, nodedown, State);
+handle_info({'EXIT', Pid, Reason}, State) ->
+    unregister(node(Pid), Reason, State).
 
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
 terminate(_Reason, _State) ->
     ok.
+
+unregister(Node, Reason, State = #state{java_nodes = JN}) ->
+    io:format("~p on ~p: Java node ~p died. Reason: ~p~n",
+              [?MODULE, node(), Node, Reason]),
+    {noreply, State#state{java_nodes = orddict:erase(Node, JN)}}.

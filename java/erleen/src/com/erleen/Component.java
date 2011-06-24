@@ -62,7 +62,7 @@ public abstract class Component implements Serializable
         OtpErlangList args =
                 new OtpErlangList(new OtpErlangObject[]
                 {
-                    new OtpErlangString(msg.getPortName()),
+                    new OtpErlangAtom(msg.getPortName()),
                     msg.getMessage(),
                 });
         OtpErlangObject reply = dispatcher.rpc(pid, "een", "out", args);
@@ -107,6 +107,8 @@ public abstract class Component implements Serializable
         if (!(response instanceof OtpErlangAtom) ||
                 !((OtpErlangAtom) response).atomValue().equals("ok"))
         {
+            // @#
+            System.out.println("The response is: " + response.toString());
             throw new ErleenException("Invalid response");
         }
     }

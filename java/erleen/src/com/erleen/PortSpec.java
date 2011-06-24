@@ -12,13 +12,15 @@ public class PortSpec
     
     public PortSpec(String name, PortType type, MessageType msgType, int arrity)
     {
-        portSpec = new OtpErlangTuple(new OtpErlangObject[]
-        {
-            new OtpErlangAtom("een_port_spec"),
-            typeToErlang(type),
-            messageTypeToErlang(msgType),
-            new OtpErlangInt(arrity),
-        });
+        portSpec =
+                new OtpErlangTuple(new OtpErlangObject[]
+                {
+                    new OtpErlangAtom("een_port_spec"),
+                    new OtpErlangAtom(name),
+                    typeToErlang(type),
+                    messageTypeToErlang(msgType),
+                    new OtpErlangInt(arrity),
+                });
     }
 
     OtpErlangObject toErlang()
