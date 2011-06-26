@@ -143,7 +143,9 @@ loop(State = #state{mod = Mod, mst = Mst, parent = Parent}) ->
         end).
 
 check_expected_reply(Monitor) ->
-    true = ordsets:is_element(Monitor, get('$reply_futures_set')).
+    ReplyFuturesSet = get('$reply_futures_set'),
+    true = ordsets:is_element(Monitor, ReplyFuturesSet),
+    put('$reply_futures_set', ordsets:del_element(Monitor, ReplyFuturesSet)).
 
 handle_return({ok, NewMst}, _From, State) ->
     State#state{mst = NewMst};
