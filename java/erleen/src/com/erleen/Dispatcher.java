@@ -39,8 +39,6 @@ public class Dispatcher
     private final Object rpcLock = new Object();
     private OtpMbox selfRpc = null;
 
-    private final Object debugLock = new Object();
-
     private final Map<OtpErlangPid, Component> mapComponents =
             Collections.synchronizedMap(new HashMap<OtpErlangPid, Component>());
 
@@ -88,6 +86,8 @@ public class Dispatcher
     {
         try
         {
+            System.out.println("Attempting connection to Erleen...");
+            
             if(!node.ping(erleenNode, 10000))
                 throw new ErleenException("Did not receive pong");
 
@@ -102,6 +102,8 @@ public class Dispatcher
             if (!(registerReply instanceof OtpErlangAtom &&
                     ((OtpErlangAtom) registerReply).atomValue().equals("ok")))
                 throw new ErleenException("Unable to register java node");
+
+            System.out.println("... connected!");
 
             while (true)
             {
@@ -310,14 +312,6 @@ public class Dispatcher
         private void handleRequest(RequestBit req)
                 throws ErleenException, OtpErlangExit
         {
-            // @#
-            synchronized (debugLock)
-            {
-                System.out.println(
-                        pid.toString() + ": handling request fun: " +
-                        req.function + " args: " + req.args.toString());
-            }
-
             Component component = mapComponents.get(pid);
 
             if (component == null && !req.function.equals("reinit"))
@@ -469,7 +463,6 @@ public class Dispatcher
                     }
                     catch (OtpErlangExit ex)
                     {
-                        ex.printStackTrace();
                         if (ex.pid() == null)
                         {
                             throw new ErleenException(ex);
@@ -499,12 +492,6 @@ public class Dispatcher
         {
             OtpErlangObject request = self.receive();
 
-            // @#
-            synchronized (debugLock)
-            {
-                System.out.println("received: " + request.toString());
-            }
-
             OtpErlangObject[] rpcTuple = ((OtpErlangTuple) request).elements();
             if (rpcTuple.length != 4)
                 throw new ErleenException("Received invalid message");
@@ -522,12 +509,6 @@ public class Dispatcher
             {
                 String function = ((OtpErlangAtom) requestTuple[1]).atomValue();
                 OtpErlangList args = (OtpErlangList) requestTuple[2];
-
-                // @#
-                synchronized (debugLock)
-                {
-                    System.out.println("Dispatching fun: " + function + " args: " + args.toString());
-                }
 
                 synchronized (mapRequests)
                 {

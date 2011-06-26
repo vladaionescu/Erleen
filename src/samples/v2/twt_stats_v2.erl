@@ -1,11 +1,11 @@
 
--module(twt_stats2).
+-module(twt_stats_v2).
 
 -behaviour(een_comp).
 
 -compile(export_all).
 
--include_lib("erleen.hrl").
+-include_lib("../../../include/erleen.hrl").
 
 -record(state, {total_tweets = 0,
                 user_tweets = orddict:new(),

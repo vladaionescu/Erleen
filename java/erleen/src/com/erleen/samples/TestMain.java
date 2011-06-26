@@ -9,7 +9,6 @@ public class TestMain
 {
     public static void main(String[] args)
     {
-        System.out.println("Attempting connection to Erleen...");
         Dispatcher disp;
         try
         {

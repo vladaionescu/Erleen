@@ -225,7 +225,7 @@ reconfig(NewSpec = #een_component_spec{id = Id,
                 NewMod:reinit(OldMod, OldMst, Args),
             put_s(OldState#een_state{mod = NewMod,
                                      mst = NewMst,
-                                     spec = NewSpec,
+                                     spec = NewSpec#een_component_spec{version = new},
                                      if_spec =
                                          build_interface_spec(InterfaceSpec),
                                      ext_in_binds = orddict:new(),
@@ -261,7 +261,7 @@ reconfig_children(Config = #een_children_config{is_spawn = IsSpawn,
             end,
             #een_component{spec = Spec, pid = self()}, MCs),
     State1 = State#een_state{map_comps = MCs1,
-                             config = Config,
+                             config = Config#een_children_config{version = new},
                              map_pid_compid = orddict:new()},
     case IsSpawn of
         false ->
@@ -492,25 +492,57 @@ respawn_child(Id, Restart) ->
                                spec = Spec,
                                children_config = ChildrenConfig} =
                 orddict:fetch(Id, MCs),
-            NewComponent = #een_component{pid = NewPid} =
+            {NewComponent, ReplacePids} =
                 case Restart of
                     false when is_pid(OldPid) ->
-                        Component;
+                        {Component, false};
                     false when OldPid =:= undefined ->
                         {ok, Pid} = een_config:respawn_child(Spec),
-                        Component#een_component{pid = Pid};
+                        {Component#een_component{pid = Pid}, false};
                     true when is_pid(OldPid) ->
                         {ok, Pid} = een_config:respawn_child(Spec),
-                        %% IMPORTANT TODO: replace all bindings containing old pid !!!
-                        ok = een_config:reconfig(Pid, Spec, ChildrenConfig),
-                        Component#een_component{pid = Pid}
+                        {Component#een_component{pid = Pid}, true}
                 end,
+            #een_component{pid = NewPid} = NewComponent,
             NewMCs = orddict:store(Id, NewComponent, MCs),
             MPC1 = orddict:erase(OldPid, MPC),
             MPC2 = orddict:store(NewPid, Id, MPC1),
             put_s(State#een_state{map_comps = NewMCs, map_pid_compid = MPC2}),
+            if
+                ReplacePids -> replace_pid_in_components_bindings(OldPid, NewPid),
+                               ok = een_config:reconfig(NewPid, Spec, ChildrenConfig);
+                true        -> ok
+            end,
             {ok, NewPid}
     end.
+
+replace_pid_in_components_bindings(OldPid, NewPid) ->
+    State = #een_state{map_comps = MCs} = get_s(),
+    NewMCs =
+        orddict:map(fun (_, Component = #een_component{in_binds = InBinds,
+                                                       out_binds = OutBinds}) ->
+                            Component#een_component{
+                                in_binds = replace_pid_in_bindings(OldPid, NewPid, InBinds),
+                                out_binds = replace_pid_in_bindings(OldPid, NewPid, OutBinds)}
+                    end, MCs),
+    put_s(State#een_state{map_comps = NewMCs}).
+
+replace_pid_in_bindings(OldPid, NewPid, Bindings) ->
+    orddict:map(fun (_, Binding) ->
+                        replace_pid_in_port_bindings(OldPid, NewPid, Binding)
+                end, Bindings).
+
+replace_pid_in_port_bindings(OldPid, NewPid, {route, Bindings, Route}) ->
+    {route, replace_pid_in_port_bindings(OldPid, NewPid, Bindings), Route};
+replace_pid_in_port_bindings(OldPid, NewPid, Bindings) when is_list(Bindings) ->
+    lists:map(fun (Binding) ->
+                      replace_pid_in_binding(OldPid, NewPid, Binding)
+              end, Bindings).
+
+replace_pid_in_binding(OldPid, NewPid, {Id, OldPid, Port}) ->
+    {Id, NewPid, Port};
+replace_pid_in_binding(_, _, {_, _, _} = NoChange) ->
+    NoChange.
 
 register_binding({From, To}, MCs) ->
     register_binding1(From, To, basic, MCs);

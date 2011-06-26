@@ -32,11 +32,11 @@
 %% ----------------------------------------------------------------------------
 
 -record(een_state, {id = een_comp,
-                    config,
+                    config = #een_children_config{},
                     mod = none,
                     mst = none,
-                    if_spec,
-                    spec,
+                    if_spec = #een_interface_spec{},
+                    spec = #een_component_spec{},
                     is_spawn = false,
                     spawn_binding,
                     spawn_index = 1,

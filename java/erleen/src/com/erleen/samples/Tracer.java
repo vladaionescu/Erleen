@@ -5,6 +5,7 @@ import com.ericsson.otp.erlang.OtpErlangExit;
 import com.ericsson.otp.erlang.OtpErlangLong;
 import com.ericsson.otp.erlang.OtpErlangObject;
 import com.ericsson.otp.erlang.OtpErlangRangeException;
+import com.ericsson.otp.erlang.OtpErlangTuple;
 import com.erleen.ChildExitAction;
 import com.erleen.Component;
 import com.erleen.ErleenException;
@@ -27,11 +28,12 @@ public class Tracer extends Component
     {
         count = 0;
 
+        OtpErlangObject[] paramsTuple = ((OtpErlangTuple) params[0]).elements();
         int arrity;
         try
         {
-            arrity = ((OtpErlangLong) params[0]).intValue();
-            freq = ((OtpErlangLong) params[1]).intValue();
+            arrity = ((OtpErlangLong) paramsTuple[0]).intValue();
+            freq = ((OtpErlangLong) paramsTuple[1]).intValue();
         }
         catch (OtpErlangRangeException ex)
         {

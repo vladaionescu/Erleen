@@ -59,7 +59,7 @@ handle_reply(MsgId, Reply, State = #state{calls = Calls}) ->
     end,
     {ok, State#state{calls = NewCalls}}.
 
-handle_child_exit(_Child, State) ->
+handle_child_exit(_Child, _Reason, State) ->
     {restart, State}.
 
 terminate(Reason, _State) ->
