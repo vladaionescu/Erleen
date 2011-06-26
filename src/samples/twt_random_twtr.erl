@@ -43,6 +43,14 @@ handle_reply(MsgId, {reply, ok}, State = #state{new_user_call = MsgId,
     NewMsgId = tweet(User),
     {ok, State#state{new_user_call = undefined,
                      tweet_call = NewMsgId}};
+handle_reply(MsgId, {reply, {down, _}}, State = #state{new_user_call = MsgId,
+                                                       user = User}) ->
+    {ok, MsgId} = een:out(new_user, {User}),
+    {ok, State#state{new_user_call = MsgId}};
+handle_reply(MsgId, {down, _}, State = #state{new_user_call = MsgId,
+                                              user = User}) ->
+    {ok, MsgId} = een:out(new_user, {User}),
+    {ok, State#state{new_user_call = MsgId}};
 handle_reply(MsgId, _, State = #state{tweet_call = MsgId,
                                       user = User}) ->
     NewMsgId = tweet(User),
